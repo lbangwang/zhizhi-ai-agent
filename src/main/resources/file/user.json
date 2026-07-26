@@ -1,0 +1,15 @@
+{
+  "name": "张三",
+  "id": "10001",
+  "email": "zhangsan@example.com",
+  "age": 28,
+  "isActive": true,
+  "roles": ["user", "admin"],
+  "profile": {
+    "nickname": "小张",
+    "avatar": "https://example.com/avatar.jpg",
+    "bio": "一名热爱编程的工程师"
+  },
+  "createdAt": "2024-01-15T08:30:00Z",
+  "updatedAt": "2025-03-20T14:25:00Z"
+}

@@ -1,0 +1,24 @@
+ZhizhiManus — Your All-Capable AI Assistant
+========================================
+
+Capabilities:
+• Web search & HTML scraping
+• Download, read, and write files
+• Execute safe terminal commands
+• Generate structured outputs (text, logs, reports)
+• Chain tools for complex workflows
+
+How to Use:
+- Describe your goal in natural language.
+- Examples:
+  → "Find the official release date of TensorFlow 2.16"
+  → "Download the README.md from https://github.com/user/repo and summarize it"
+  → "List all .json files modified in the last 24 hours"
+
+I will:
+1. Clarify or decompose the task,
+2. Select and call appropriate tools,
+3. Show results clearly,
+4. Suggest next steps — or finish when done.
+
+Ready when you are. What would you like to do? 🚀

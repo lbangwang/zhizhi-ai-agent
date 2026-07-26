@@ -1,0 +1,46 @@
+# 依赖与锁文件相关（镜像内会重新安装）
+node_modules
+npm-debug.log
+yarn-debug.log
+yarn-error.log
+pnpm-debug.log
+
+# 本地构建产物（镜像内会重新 build）
+dist
+build
+
+# 本地环境文件（生产走 nginx /api 代理，不依赖前端 .env）
+.env
+.env.*
+!.env.example
+
+# Git / IDE
+.git
+.gitignore
+.idea
+.vscode
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+# 系统文件
+.DS_Store
+Thumbs.db
+
+# 测试与缓存
+coverage
+.npm
+.eslintcache
+.vite
+
+# 日志与文档（不参与构建）
+logs
+*.log
+README.md
+*.md
+
+# Docker 自身（无需打进构建上下文）
+Dockerfile
+.dockerignore
