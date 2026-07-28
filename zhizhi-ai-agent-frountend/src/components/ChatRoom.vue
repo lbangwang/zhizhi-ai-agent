@@ -32,9 +32,60 @@
               :src="msg.role === 'user' ? userAvatar : aiAvatar"
               :alt="msg.role === 'user' ? '用户头像' : `${title}头像`"
             />
-            <div class="bubble">
+            <!-- 用户气泡：保持原样式 -->
+            <div v-if="msg.role === 'user'" class="bubble">
               <p class="bubble-text">{{ msg.content }}</p>
-              <span v-if="msg.loading" class="typing-cursor">|</span>
+            </div>
+
+            <!-- AI 气泡：超级智能体思考区 + 回答 -->
+            <div
+              v-else
+              class="bubble"
+              :class="{ 'bubble-agent': !!msg.thinking }"
+            >
+              <div
+                v-if="msg.thinking && msg.thinking.status !== 'idle'"
+                class="thinking-panel"
+              >
+                <button
+                  type="button"
+                  class="thinking-header"
+                  @click="toggleThinking(msg)"
+                >
+                  <span class="thinking-left">
+                    <span class="thinking-icon" aria-hidden="true">◎</span>
+                    <span class="thinking-title">
+                      {{
+                        msg.thinking.status === 'in_progress'
+                          ? '思考中...'
+                          : '已完成深度思考'
+                      }}
+                    </span>
+                  </span>
+                  <span class="thinking-chevron" aria-hidden="true">
+                    {{ msg.thinking.collapsed ? '▾' : '▴' }}
+                  </span>
+                </button>
+                <div v-show="!msg.thinking.collapsed" class="thinking-body">
+                  <pre class="thinking-text">{{ msg.thinking.text || ' ' }}</pre>
+                  <span
+                    v-if="msg.thinking.status === 'in_progress'"
+                    class="typing-cursor"
+                  >|</span>
+                </div>
+              </div>
+
+              <div v-if="msg.answer?.text" class="answer-body">
+                <p class="bubble-text">{{ msg.answer.text }}</p>
+              </div>
+              <template v-else-if="!msg.thinking">
+                <p class="bubble-text">{{ msg.content }}</p>
+                <span v-if="msg.loading" class="typing-cursor">|</span>
+              </template>
+              <span
+                v-else-if="msg.loading && !msg.answer?.text"
+                class="typing-cursor"
+              >|</span>
             </div>
           </div>
           <div
@@ -138,37 +189,53 @@
             rows="2"
             @keydown.enter.exact.prevent="sendMessage"
           />
-          <div class="composer-actions">
-            <button
-              v-if="isLoading"
-              class="stop-btn"
-              type="button"
-              title="停止输出"
-              aria-label="停止输出"
-              @click="stopMessage"
-            >
-              <span class="stop-square" />
-            </button>
-            <button
-              v-else
-              class="send-btn"
-              type="button"
-              :disabled="!inputText.trim()"
-              title="发送"
-              aria-label="发送"
-              @click="sendMessage"
-            >
-              <svg class="send-icon" viewBox="0 0 24 24" aria-hidden="true">
-                <path
-                  d="M12 19V5M12 5l-6 6M12 5l6 6"
-                  fill="none"
-                  stroke="currentColor"
-                  stroke-width="2.4"
-                  stroke-linecap="round"
-                  stroke-linejoin="round"
-                />
-              </svg>
-            </button>
+          <div class="composer-toolbar">
+            <label class="model-select-wrap" title="选择大模型">
+              <span class="model-select-icon" aria-hidden="true">✦</span>
+              <select
+                v-model="selectedModel"
+                class="model-select"
+                :disabled="isLoading"
+                aria-label="选择大模型"
+              >
+                <option v-for="m in modelOptions" :key="m.id" :value="m.id">
+                  {{ m.label }}
+                </option>
+              </select>
+              <span class="model-select-chevron" aria-hidden="true">▾</span>
+            </label>
+            <div class="composer-actions">
+              <button
+                v-if="isLoading"
+                class="stop-btn"
+                type="button"
+                title="停止输出"
+                aria-label="停止输出"
+                @click="stopMessage"
+              >
+                <span class="stop-square" />
+              </button>
+              <button
+                v-else
+                class="send-btn"
+                type="button"
+                :disabled="!inputText.trim()"
+                title="发送"
+                aria-label="发送"
+                @click="sendMessage"
+              >
+                <svg class="send-icon" viewBox="0 0 24 24" aria-hidden="true">
+                  <path
+                    d="M12 19V5M12 5l-6 6M12 5l6 6"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="2.4"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                  />
+                </svg>
+              </button>
+            </div>
           </div>
         </div>
         <p class="ai-disclaimer">内容由AI生成，请仔细斟酌</p>
@@ -182,6 +249,7 @@
 import { computed, ref, nextTick, watch } from 'vue'
 import { fetchSSE } from '../api/sse.js'
 import { APP_AVATARS } from '../constants/apps.js'
+import { DEFAULT_MODEL, MODEL_OPTIONS } from '../constants/models.js'
 import SiteFooter from './SiteFooter.vue'
 import ParticleBackground from './ParticleBackground.vue'
 
@@ -233,6 +301,11 @@ const props = defineProps({
     default: 'COMMON',
     validator: (value) => ['PROFESSIONAL', 'COMMON'].includes(value),
   },
+  /** 默认大模型：deepseek | qwen | doubao */
+  defaultModel: {
+    type: String,
+    default: DEFAULT_MODEL,
+  },
 })
 
 const aiAvatar = computed(() => props.avatar || APP_AVATARS[props.accent] || APP_AVATARS.agent)
@@ -249,6 +322,8 @@ const editInputRef = ref(null)
 const copiedIndex = ref(-1)
 const editingIndex = ref(-1)
 const editText = ref('')
+const modelOptions = MODEL_OPTIONS
+const selectedModel = ref(props.defaultModel || DEFAULT_MODEL)
 let abortController = null
 let lastUserMessage = ''
 let stopping = false
@@ -310,21 +385,218 @@ function confirmEditAndSend() {
   sendMessage(text)
 }
 
-function appendStepBubble(content) {
-  const last = messages.value[messages.value.length - 1]
-  if (last?.role === 'ai' && last.loading) {
-    last.content = content
-    last.loading = false
+function createAgentMessage() {
+  return {
+    role: 'ai',
+    content: '',
+    loading: true,
+    thinking: {
+      status: 'in_progress',
+      text: '',
+      collapsed: false,
+    },
+    answer: {
+      status: 'idle',
+      text: '',
+    },
+  }
+}
+
+function ensureAgentMessage(aiIndex) {
+  const current = messages.value[aiIndex]
+  if (current?.role === 'ai' && current.thinking && current.answer) {
+    return current
+  }
+  const agentMsg = createAgentMessage()
+  if (current?.role === 'ai') {
+    messages.value[aiIndex] = agentMsg
+  }
+  return messages.value[aiIndex]
+}
+
+function isAgentEventPayload(raw) {
+  if (!raw || typeof raw !== 'string') return false
+  const trimmed = raw.trim()
+  if (!trimmed.startsWith('{')) return false
+  try {
+    const parsed = JSON.parse(trimmed)
+    return Boolean(parsed && typeof parsed.type === 'string')
+  } catch {
+    return false
+  }
+}
+
+/** 把思考区里嵌套的 JSON 尽量转成可读文本 */
+function formatThinkingText(text) {
+  if (!text) return ''
+  const headerMatch = text.match(/^(【步骤\s*\d+\s*·\s*[^】]+】)\s*\n?([\s\S]*)$/)
+  const header = headerMatch ? headerMatch[1] : ''
+  const body = (headerMatch ? headerMatch[2] : text).trim()
+
+  if (body.startsWith('{') || body.startsWith('[')) {
+    try {
+      const obj = JSON.parse(body)
+      const lines = []
+      if (header) lines.push(header)
+      if (obj.summary) lines.push(String(obj.summary))
+      if (Array.isArray(obj.steps)) {
+        lines.push('')
+        obj.steps.forEach((step, idx) => {
+          const stepText =
+            typeof step === 'string'
+              ? step
+              : step?.detail || step?.name || JSON.stringify(step)
+          lines.push(`${idx + 1}. ${stepText}`)
+        })
+      }
+      if (obj.metadata?.next_action_suggestion) {
+        lines.push('')
+        lines.push(`下一步建议：${obj.metadata.next_action_suggestion}`)
+      }
+      if (lines.length > (header ? 1 : 0)) {
+        return lines.join('\n')
+      }
+    } catch {
+      // ignore and fall through
+    }
+  }
+  return text
+}
+
+function formatAnswerText(text) {
+  if (!text) return ''
+  const trimmed = text.trim()
+  if (!(trimmed.startsWith('{') || trimmed.startsWith('['))) {
+    return text
+  }
+  try {
+    const obj = JSON.parse(trimmed)
+    const lines = []
+    if (obj.summary) lines.push(String(obj.summary))
+    if (Array.isArray(obj.steps)) {
+      lines.push('')
+      obj.steps.forEach((step, idx) => {
+        if (typeof step === 'string') {
+          lines.push(`${idx + 1}. ${step}`)
+        } else if (step && typeof step === 'object') {
+          const title = step.name || `步骤 ${idx + 1}`
+          const detail = step.detail || step.description || ''
+          lines.push(`${idx + 1}. ${title}${detail ? `：${detail}` : ''}`)
+        }
+      })
+    }
+    if (obj.metadata?.next_action_suggestion) {
+      lines.push('')
+      lines.push(`建议：${obj.metadata.next_action_suggestion}`)
+    }
+    return lines.length ? lines.join('\n') : text
+  } catch {
+    return text
+  }
+}
+
+function toggleThinking(msg) {
+  if (!msg?.thinking) return
+  // 思考中不允许折叠，方便看实时过程
+  if (msg.thinking.status === 'in_progress') return
+  msg.thinking.collapsed = !msg.thinking.collapsed
+}
+
+function handleAgentEvent(raw, aiIndex) {
+  const msg = ensureAgentMessage(aiIndex)
+  if (!msg) return
+
+  let event = null
+  try {
+    event = JSON.parse(raw.trim())
+    // 兼容被二次 JSON 序列化的情况：`"{\"type\":\"...\"}"`
+    if (typeof event === 'string') {
+      event = JSON.parse(event)
+    }
+  } catch {
+    // 兼容旧的纯文本 step 输出
+    msg.thinking.status = 'in_progress'
+    msg.thinking.collapsed = false
+    msg.thinking.text = msg.thinking.text
+      ? `${msg.thinking.text}\n\n${raw}`
+      : raw
     return
   }
-  messages.value.push({ role: 'ai', content, loading: false })
+
+  if (!event?.type) {
+    msg.thinking.status = 'in_progress'
+    msg.thinking.collapsed = false
+    msg.thinking.text = msg.thinking.text
+      ? `${msg.thinking.text}\n\n${raw}`
+      : raw
+    return
+  }
+
+  switch (event.type) {
+    case 'thinking_start':
+      msg.thinking.status = 'in_progress'
+      msg.thinking.collapsed = false
+      msg.thinking.text = msg.thinking.text || ''
+      msg.loading = true
+      break
+    case 'thinking_delta':
+      msg.thinking.status = 'in_progress'
+      msg.thinking.collapsed = false
+      if (event.text) {
+        const readable = formatThinkingText(event.text)
+        msg.thinking.text = msg.thinking.text
+          ? `${msg.thinking.text}\n\n${readable}`
+          : readable
+      }
+      break
+    case 'thinking_done':
+      // 只切换状态，不覆盖已流式累积的思考内容
+      msg.thinking.status = 'done'
+      if (event.text && !msg.thinking.text) {
+        msg.thinking.text = String(event.text)
+          .split(/\n\n+/)
+          .map((part) => formatThinkingText(part))
+          .join('\n\n')
+      }
+      msg.thinking.collapsed = true
+      break
+    case 'answer_done':
+      msg.answer.status = 'done'
+      msg.answer.text = formatAnswerText(event.text || '')
+      msg.content = msg.answer.text
+      msg.loading = false
+      break
+    case 'error':
+      msg.answer.status = 'done'
+      msg.answer.text = event.text || '发生错误'
+      msg.content = msg.answer.text
+      if (msg.thinking.status === 'in_progress') {
+        msg.thinking.status = 'done'
+        msg.thinking.collapsed = true
+      }
+      msg.loading = false
+      break
+    default:
+      break
+  }
 }
 
 function markStopped() {
   const last = messages.value[messages.value.length - 1]
   if (last?.role === 'ai') {
-    if (last.loading && !last.content) {
+    if (last.thinking?.status === 'in_progress') {
+      last.thinking.status = 'done'
+      last.thinking.collapsed = true
+      if (!last.thinking.text) {
+        last.thinking.text = '已停止生成'
+      }
+    }
+    if (last.loading && !last.content && !last.answer?.text) {
       last.content = '已停止生成'
+      last.answer = { status: 'done', text: '已停止生成' }
+    } else if (last.answer?.text && !last.answer.text.includes('已停止生成')) {
+      last.answer.text += '\n\n[已停止生成]'
+      last.content = last.answer.text
     } else if (last.content && !last.content.includes('已停止生成')) {
       last.content += '\n\n[已停止生成]'
     }
@@ -335,10 +607,16 @@ function markStopped() {
 function finishLoadingState() {
   const last = messages.value[messages.value.length - 1]
   if (last?.role === 'ai' && last.loading) {
-    if (!last.content) {
+    const hasContent =
+      last.content || last.answer?.text || last.thinking?.text
+    if (!hasContent) {
       messages.value.pop()
     } else {
       last.loading = false
+      if (last.thinking?.status === 'in_progress') {
+        last.thinking.status = 'done'
+        last.thinking.collapsed = true
+      }
     }
   }
   isLoading.value = false
@@ -413,13 +691,20 @@ async function sendMessage(overrideText) {
   }
 
   const aiIndex = messages.value.length
-  messages.value.push({ role: 'ai', content: '', loading: true })
+  const useAgentUi =
+    props.stepMode || String(props.apiUrl || '').includes('ZhizhiManus')
+  messages.value.push(
+    useAgentUi ? createAgentMessage() : { role: 'ai', content: '', loading: true },
+  )
   isLoading.value = true
   stopping = false
 
   abortController = new AbortController()
 
-  const params = { message: text }
+  const params = {
+    message: text,
+    model: selectedModel.value || DEFAULT_MODEL,
+  }
   if (props.chatId) {
     params.chatId = props.chatId
   }
@@ -429,22 +714,26 @@ async function sendMessage(overrideText) {
       props.apiUrl,
       params,
       (chunk) => {
-        if (props.stepMode) {
-          const content = chunk.trim()
-          if (content) {
-            appendStepBubble(content)
-          }
-        } else {
-          messages.value[aiIndex].content += chunk
+        const content = (chunk || '').trim()
+        if (!content) return
+
+        // 智能体结构化事件：始终走思考/回答面板，避免把 JSON 当普通气泡
+        if (useAgentUi || isAgentEventPayload(content)) {
+          handleAgentEvent(content, aiIndex)
+          return
         }
+        messages.value[aiIndex].content += chunk
       },
       abortController.signal,
     )
   } catch (err) {
     if (err.name !== 'AbortError') {
       const errorText = `[错误: ${err.message}]`
-      if (props.stepMode) {
-        appendStepBubble(errorText)
+      if (useAgentUi) {
+        handleAgentEvent(
+          JSON.stringify({ type: 'error', text: errorText }),
+          aiIndex,
+        )
       } else {
         messages.value[aiIndex].content += `\n${errorText}`
       }
@@ -770,6 +1059,95 @@ async function sendMessage(overrideText) {
   margin: 0;
 }
 
+.bubble-agent {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  max-width: min(88%, 640px);
+  background: transparent !important;
+  border: none !important;
+  box-shadow: none !important;
+  padding: 0;
+}
+
+.thinking-panel {
+  border: 1px solid rgba(15, 28, 46, 0.1);
+  border-radius: 14px;
+  background: rgba(244, 247, 251, 0.95);
+  overflow: hidden;
+}
+
+.thinking-header {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 10px 12px;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  color: var(--color-text);
+  font: inherit;
+}
+
+.thinking-left {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.thinking-icon {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  color: var(--accent);
+  background: var(--accent-soft);
+  flex-shrink: 0;
+}
+
+.thinking-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--color-text-secondary);
+}
+
+.thinking-chevron {
+  color: var(--color-text-muted);
+  font-size: 12px;
+}
+
+.thinking-body {
+  padding: 0 12px 12px;
+  border-top: 1px solid rgba(15, 28, 46, 0.06);
+}
+
+.thinking-text {
+  margin: 10px 0 0;
+  padding: 0;
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-family: inherit;
+  font-size: 13px;
+  line-height: 1.65;
+  color: var(--color-text-secondary);
+  background: transparent;
+}
+
+.answer-body {
+  padding: 12px 14px;
+  border-radius: 14px;
+  border-top-left-radius: 4px;
+  background: rgba(255, 255, 255, 0.92);
+  border: 1px solid rgba(255, 255, 255, 0.8);
+  box-shadow: var(--shadow-soft);
+}
+
 .typing-cursor {
   animation: blink 1s step-end infinite;
   color: var(--accent);
@@ -802,10 +1180,85 @@ async function sendMessage(overrideText) {
   box-shadow: 0 0 0 3px var(--accent-soft);
 }
 
+.composer-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  min-height: 36px;
+}
+
+.model-select-wrap {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex: 0 0 auto;
+  min-width: 118px;
+  height: 34px;
+  padding: 0 28px 0 12px;
+  border: 1px solid rgba(15, 28, 46, 0.14);
+  border-radius: 999px;
+  background: #f4f7fb;
+  color: var(--color-text);
+  cursor: pointer;
+  transition:
+    border-color 0.2s,
+    background 0.2s,
+    box-shadow 0.2s;
+}
+
+.model-select-wrap:hover,
+.model-select-wrap:focus-within {
+  border-color: color-mix(in srgb, var(--accent) 45%, transparent);
+  background: #fff;
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+
+.model-select-icon {
+  flex-shrink: 0;
+  font-size: 12px;
+  color: var(--accent);
+  line-height: 1;
+}
+
+.model-select {
+  appearance: none;
+  -webkit-appearance: none;
+  border: none;
+  outline: none;
+  background: transparent;
+  color: var(--color-text);
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 34px;
+  height: 34px;
+  padding: 0;
+  margin: 0;
+  min-width: 72px;
+  cursor: pointer;
+}
+
+.model-select:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.model-select-chevron {
+  position: absolute;
+  right: 10px;
+  top: 50%;
+  transform: translateY(-50%);
+  font-size: 11px;
+  color: var(--color-text-muted);
+  pointer-events: none;
+}
+
 .composer-actions {
   display: flex;
   justify-content: flex-end;
   align-items: center;
+  margin-left: auto;
 }
 
 .chat-input {

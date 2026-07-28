@@ -66,6 +66,20 @@ public class ToolCallAgent extends ReActAgent{
                     )
                     .collect(Collectors.joining("\n"));
             log.info(toolCallInfo);
+
+            //「深度思考」展示：模型推理文本 + 工具计划
+            StringBuilder thinkBuilder = new StringBuilder();
+            if (result != null && !result.isBlank()) {
+                thinkBuilder.append(result.trim());
+            }
+            if (!toolCallList.isEmpty()) {
+                if (!thinkBuilder.isEmpty()) {
+                    thinkBuilder.append("\n\n");
+                }
+                thinkBuilder.append("计划调用工具：\n").append(toolCallInfo);
+            }
+            this.lastThinkText = thinkBuilder.toString();
+
             if (toolCallList.isEmpty()) {
                 // 只有不调用工具时，才记录助手消息
                 getMessageList().add(assistantMessage);
@@ -120,6 +134,16 @@ public class ToolCallAgent extends ReActAgent{
     private ChatResponse toolCallChatResponse;
 
     /**
+     * 最近一次 think 的可展示文本（给前端深度思考区域）
+     */
+    private String lastThinkText = "";
+
+    @Override
+    public String getLastThinkText() {
+        return lastThinkText == null ? "" : lastThinkText;
+    }
+
+    /**
      * 工具管理
      */
     private final ToolCallingManager toolCallingManager;
@@ -130,13 +154,17 @@ public class ToolCallAgent extends ReActAgent{
     private final ChatOptions chatOptions;
 
     public ToolCallAgent(ToolCallback[] availableTools) {
+        this(availableTools, DashScopeChatOptions.builder()
+                .withProxyToolCalls(true)
+                .build());
+    }
+
+    public ToolCallAgent(ToolCallback[] availableTools, ChatOptions chatOptions) {
         super();
         this.availableTools = availableTools;
         this.toolCallingManager = ToolCallingManager.builder().build();
         // 禁用 Spring AI 内置的工具调用机制，自己维护选项和消息上下文
-        this.chatOptions = DashScopeChatOptions.builder()
-                .withProxyToolCalls(true)
-                .build();
+        this.chatOptions = chatOptions;
     }
 
 }

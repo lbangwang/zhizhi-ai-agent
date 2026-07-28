@@ -1,21 +1,29 @@
 package com.zhizhi.zhizhiaiagent.agent.model;
 
+import com.alibaba.cloud.ai.dashscope.chat.DashScopeChatOptions;
 import com.zhizhi.zhizhiaiagent.advisor.MyLogAdvisor;
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.ai.chat.model.ChatModel;
+import org.springframework.ai.chat.prompt.ChatOptions;
 import org.springframework.ai.tool.ToolCallback;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.stereotype.Component;
 
 @Component
 public class ZhizhiManus extends ToolCallAgent {
-  
-    public ZhizhiManus(ToolCallback[] allTools, ChatModel dashscopeChatModel) {
-        super(allTools);  
+
+    @Autowired
+    public ZhizhiManus(ToolCallback[] allTools,
+                       @Qualifier("dashscopeChatModel") ChatModel dashscopeChatModel) {
+        this(allTools, dashscopeChatModel, DashScopeChatOptions.builder()
+                .withProxyToolCalls(true)
+                .build());
+    }
+
+    public ZhizhiManus(ToolCallback[] allTools, ChatModel chatModel, ChatOptions chatOptions) {
+        super(allTools, chatOptions);
         this.setName("ZhizhiManus");
-//        String SYSTEM_PROMPT = """
-//                You are ZhizhiManus, an all-capable AI assistant, aimed at solving any task presented by the user.
-//                You have various tools at your disposal that you can call upon to efficiently complete complex requests.
-//                """;
 
         /**
          * 深度思考提示词
@@ -43,13 +51,13 @@ public class ZhizhiManus extends ToolCallAgent {
                 For complex tasks, you can break down the problem and use different tools step by step to solve it.
                 After using each tool, clearly explain the execution results and suggest the next steps.
                 If you want to stop the interaction at any point, use the `terminate` tool/function call.
-                """;  
-        this.setNextStepPrompt(NEXT_STEP_PROMPT);  
+                """;
+        this.setNextStepPrompt(NEXT_STEP_PROMPT);
+        // 设置ReAct
         this.setMaxSteps(2);
-        // 初始化客户端  
-        ChatClient chatClient = ChatClient.builder(dashscopeChatModel)
+        ChatClient chatClient = ChatClient.builder(chatModel)
                 .defaultAdvisors(new MyLogAdvisor())
-                .build();  
-        this.setChatClient(chatClient);  
-    }  
+                .build();
+        this.setChatClient(chatClient);
+    }
 }

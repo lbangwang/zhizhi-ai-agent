@@ -9,7 +9,7 @@
     empty-tip="你好！我是 AI 超级智能体，可以帮你搜索、分析并解决各类问题。"
     placeholder="描述你需要完成的任务..."
     accent="agent"
-    step-mode
+    :step-mode="true"
   />
 </template>
 

@@ -16,6 +16,12 @@ import java.util.List;
 @Slf4j
 @EqualsAndHashCode(callSuper = true)
 public abstract class ReActAgent extends BaseAgent{
+
+    /**
+     * 最近一步是否已产出最终回答（未再调用工具）
+     */
+    private boolean lastStepFinalAnswer = false;
+
     /**
      * 思考步骤：处理当前状态并执行下一步骤
      */
@@ -27,14 +33,23 @@ public abstract class ReActAgent extends BaseAgent{
     public abstract String act();
 
     /**
+     * 获取最近一次思考的可展示文本（子类可覆盖）
+     */
+    public String getLastThinkText() {
+        return "";
+    }
+
+    /**
      * 执行单个步骤：思考➕行动
      */
     @Override
     public String step() {
         try {
+            this.lastStepFinalAnswer = false;
             Boolean think = this.think();
             if (!think){
                 //如果没有工具调用，直接回复
+                this.lastStepFinalAnswer = true;
                 return getFinalAnswer();
 
 //                return "思考完成，无需行动！！！";
@@ -42,6 +57,7 @@ public abstract class ReActAgent extends BaseAgent{
             return this.act();
         } catch (Exception e) {
             log.info("执行步骤异常：{}", e.getMessage());
+            this.lastStepFinalAnswer = false;
             return "执行步骤异常：" + e.getMessage();
         }
     }

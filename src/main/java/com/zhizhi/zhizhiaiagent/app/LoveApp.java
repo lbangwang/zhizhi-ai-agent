@@ -4,6 +4,8 @@ package com.zhizhi.zhizhiaiagent.app;
 import com.zhizhi.zhizhiaiagent.advisor.MyLogAdvisor;
 import com.zhizhi.zhizhiaiagent.advisor.ReReadingAdvisor;
 import com.zhizhi.zhizhiaiagent.chatMemory.FileBasedChatMemory;
+import com.zhizhi.zhizhiaiagent.config.ChatModelRouter;
+import com.zhizhi.zhizhiaiagent.model.ChatModelType;
 import com.zhizhi.zhizhiaiagent.rag.LoveAppContextualQueryAugmenterFactory;
 import com.zhizhi.zhizhiaiagent.rag.LoveAppRagCustomAdvisorFactory;
 import io.modelcontextprotocol.client.McpAsyncClient;
@@ -50,48 +52,37 @@ import static org.springframework.ai.chat.client.advisor.AbstractChatMemoryAdvis
 @Slf4j
 public class LoveApp {
     private final ChatClient chatClient;
+    private final ChatModelRouter chatModelRouter;
+    private final ChatMemory chatMemory;
+    private final Map<ChatModelType, ChatClient> chatClientCache = new ConcurrentHashMap<>();
 
     private static final String SYSTEM_PROMPT = "您好，我是扮演深耕恋爱心理领域的专家 CC。开场向用户表明身份，告知用户可倾诉恋爱难题。" +
             "围绕单身、恋爱、已婚三种状态提问：单身状态询问社交圈拓展及追求心仪对象的困扰；" +
             "恋爱状态询问沟通、习惯差异引发的矛盾；已婚状态询问家庭责任与亲属关系处理的问题。" +
             "引导用户详述事情经过、对方反应及自身想法，以便给出专属解决方案。";
 
-    public LoveApp(ChatModel dashscopeChatModel) {
-        /**
-         * 1. 创建基于内存的记忆
-         */
-        //初始化基于内存记忆
-        ChatMemory chatMemory = new InMemoryChatMemory();
-        //设置阿里云大模型
-        chatClient = ChatClient.builder(dashscopeChatModel)
-                .defaultSystem(SYSTEM_PROMPT)
-                //对话记忆advisor
-                .defaultAdvisors(new MessageChatMemoryAdvisor(chatMemory))
-                //添加自带日志advisor
-//                .defaultAdvisors(new SimpleLoggerAdvisor())
-
-                //添加自定义advisor日志打印
-                .defaultAdvisors(new MyLogAdvisor())
-
-                //添加重复阅读advisor，增强模型推理能力，但会增加token消耗
-//                .defaultAdvisors(new ReReadingAdvisor())
-
-                //Rag增强搜索
-//                .defaultAdvisors(new QuestionAnswerAdvisor())
-                .build();
-
-
-        /**
-         * 2.创建磁盘文件持久化存储
-         */
-//        String filePath = System.getProperty("user.dir") + "/chat_memory";
-//        ChatMemory chatMemory = new FileBasedChatMemory(filePath);
-//        chatClient = ChatClient.builder(dashscopeChatModel)
-//                .defaultSystem(SYSTEM_PROMPT)
-//                //对话记忆advisor
-//                .defaultAdvisors(new MessageChatMemoryAdvisor(chatMemory))
-//                .build();
+    public LoveApp(ChatModelRouter chatModelRouter) {
+        this.chatModelRouter = chatModelRouter;
+        this.chatMemory = new InMemoryChatMemory();
+        // 默认使用千问，兼容旧调用
+        this.chatClient = buildChatClient(chatModelRouter.resolve(ChatModelType.QWEN.getCode()));
+        this.chatClientCache.put(ChatModelType.QWEN, this.chatClient);
     }
+
+    private ChatClient buildChatClient(ChatModel chatModel) {
+        return ChatClient.builder(chatModel)
+                .defaultSystem(SYSTEM_PROMPT)
+                .defaultAdvisors(new MessageChatMemoryAdvisor(chatMemory))
+                .defaultAdvisors(new MyLogAdvisor())
+                .build();
+    }
+
+    private ChatClient getChatClient(String model) {
+        ChatModelType type = ChatModelType.from(model);
+        return chatClientCache.computeIfAbsent(type,
+                key -> buildChatClient(chatModelRouter.resolve(key.getCode())));
+    }
+
 
 
     public String doChat(String userMessage, String conversationId) {
@@ -230,13 +221,18 @@ public class LoveApp {
     private final Map<String, AtomicBoolean> sessionStates = new ConcurrentHashMap<>();
 
     /**
-     * 流式输出
-     *
-     * @param message
-     * @param chatId
-     * @return
+     * 流式输出（默认千问）
      */
     public Flux<String> doChatByStream(String message, String chatId) {
+        return doChatByStream(message, chatId, ChatModelType.QWEN.getCode());
+    }
+
+    /**
+     * 流式输出，按 model 路由到不同大模型。
+     *
+     * @param model deepseek / qwen / doubao
+     */
+    public Flux<String> doChatByStream(String message, String chatId, String model) {
         // 参数校验
         if (message == null || message.trim().isEmpty()) {
             log.warn("Session {} received empty message", chatId);
@@ -247,19 +243,35 @@ public class LoveApp {
             log.warn("Received request with empty chatId");
             return Flux.just("会话ID不能为空");
         }
+
+        final ChatClient selectedClient;
+        try {
+            selectedClient = getChatClient(model);
+        } catch (Exception e) {
+            log.error("Resolve chat model failed, model={}", model, e);
+            return Flux.just(e.getMessage());
+        }
+
+        log.info("Session {} using model={}", chatId, model);
+
         //添加对于的会话状态，如果不存在则创建一个新的AtomicBoolean对象
         AtomicBoolean state = sessionStates.computeIfAbsent(chatId,
                 k -> new AtomicBoolean(true));
         // 重置状态为true（允许新的流）
         state.set(true);
-        Flux<String> contentFlux = chatClient
+
+        ChatClient.ChatClientRequestSpec promptSpec = selectedClient
                 .prompt()
                 .user(message)
                 .advisors(spec -> spec.param(CHAT_MEMORY_CONVERSATION_ID_KEY, chatId)
                         .param(CHAT_MEMORY_RETRIEVE_SIZE_KEY, 10))
                 // 开启日志，便于观察效果
-                .advisors(new MyLogAdvisor())
-                .advisors(loveAppRagCloudAdvisor)
+                .advisors(new MyLogAdvisor());
+        // 云知识库顾问仅适配千问 / DashScope
+        if (chatModelRouter.isQwen(model)) {
+            promptSpec = promptSpec.advisors(loveAppRagCloudAdvisor);
+        }
+        Flux<String> contentFlux = promptSpec
                 .tools(toolCallbackProvider)
                 .stream()
                 .content();
