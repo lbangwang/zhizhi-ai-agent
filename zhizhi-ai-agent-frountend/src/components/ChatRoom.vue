@@ -295,7 +295,7 @@ const props = defineProps({
     type: String,
     default: '/api/zhizhi-ai/stopChatByZhizhiManus',
   },
-  /** 停止接口 type：恋爱大师 PROFESSIONAL，超级智能体 COMMON */
+  /** 停止接口 type：CC面试官 PROFESSIONAL，超级智能体 COMMON */
   stopType: {
     type: String,
     default: 'COMMON',

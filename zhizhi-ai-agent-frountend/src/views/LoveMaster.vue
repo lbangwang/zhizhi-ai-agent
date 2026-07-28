@@ -1,13 +1,13 @@
 <template>
   <ChatRoom
-    title="AI 恋爱大师"
+    title="CC面试官"
     api-url="/api/zhizhi-ai/doChatBySynSSE"
     stop-api-url="/api/zhizhi-ai/stopChatByZhizhiManus"
     stop-type="PROFESSIONAL"
     :chat-id="chatId"
     :avatar="APP_AVATARS.love"
-    empty-tip="你好！我是你的 AI 恋爱大师，有什么情感问题想聊聊吗？"
-    placeholder="说说你的情感困惑..."
+    empty-tip="你好！我是专注于 AI 应用开发的 CC面试官，求职方案、项目梳理、面试拆解都可以找我。"
+    placeholder="说说你的求职目标或面试问题..."
     accent="love"
   />
 </template>

@@ -48,6 +48,9 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import static org.springframework.ai.chat.client.advisor.AbstractChatMemoryAdvisor.CHAT_MEMORY_CONVERSATION_ID_KEY;
 import static org.springframework.ai.chat.client.advisor.AbstractChatMemoryAdvisor.CHAT_MEMORY_RETRIEVE_SIZE_KEY;
 
+/**
+ * CC面试官：AI 应用开发求职与面试辅导智能体。
+ */
 @Component
 @Slf4j
 public class LoveApp {
@@ -56,10 +59,9 @@ public class LoveApp {
     private final ChatMemory chatMemory;
     private final Map<ChatModelType, ChatClient> chatClientCache = new ConcurrentHashMap<>();
 
-    private static final String SYSTEM_PROMPT = "您好，我是扮演深耕恋爱心理领域的专家 CC。开场向用户表明身份，告知用户可倾诉恋爱难题。" +
-            "围绕单身、恋爱、已婚三种状态提问：单身状态询问社交圈拓展及追求心仪对象的困扰；" +
-            "恋爱状态询问沟通、习惯差异引发的矛盾；已婚状态询问家庭责任与亲属关系处理的问题。" +
-            "引导用户详述事情经过、对方反应及自身想法，以便给出专属解决方案。";
+    private static final String SYSTEM_PROMPT = "您好，我是专注于AI应用开发领域的智能体CC！" +
+            "深耕AI技术核心板块，对技术MCP、RAG、Prompt优化、Function Calling，以及AI框架LangChain等均有深厚积累与实践经验。\n" +
+            "无论您在求职AI应用开发工程师岗位时，面临技术方案设计、项目经验梳理、面试难题拆解，或是想优化技术简历、打磨实战项目，都能向我倾诉。我会结合求职场景，精准聚焦痛点，引导您详述求职需求、技能短板与目标岗位细节，为您量身定制专属求职策略，助力高效斩获心仪offer！";
 
     public LoveApp(ChatModelRouter chatModelRouter) {
         this.chatModelRouter = chatModelRouter;
@@ -112,7 +114,7 @@ public class LoveApp {
     public LoveReport doChatWithReport(String message, String chatId) {
         LoveReport loveReport = chatClient
                 .prompt()
-                .system(SYSTEM_PROMPT + "每次对话后都要生成恋爱结果，标题为{用户名}的恋爱报告，内容为建议列表")
+                .system(SYSTEM_PROMPT + "每次对话后都要生成面试辅导结果，标题为{用户名}的面试辅导报告，内容为建议列表")
                 .user(message)
                 .advisors(spec -> spec.param(CHAT_MEMORY_CONVERSATION_ID_KEY, chatId)
                         .param(CHAT_MEMORY_RETRIEVE_SIZE_KEY, 10))
