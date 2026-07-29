@@ -49,7 +49,7 @@ import static org.springframework.ai.chat.client.advisor.AbstractChatMemoryAdvis
 import static org.springframework.ai.chat.client.advisor.AbstractChatMemoryAdvisor.CHAT_MEMORY_RETRIEVE_SIZE_KEY;
 
 /**
- * CC面试官：AI 应用开发求职与面试辅导智能体。
+ * AI面试官小助手CC：AI 应用开发求职与面试辅导智能体。
  */
 @Component
 @Slf4j
@@ -59,7 +59,7 @@ public class LoveApp {
     private final ChatMemory chatMemory;
     private final Map<ChatModelType, ChatClient> chatClientCache = new ConcurrentHashMap<>();
 
-    private static final String SYSTEM_PROMPT = "您好，我是专注于AI应用开发领域的智能体CC！" +
+    private static final String SYSTEM_PROMPT = "您好，我是专注于AI应用开发领域的AI面试官小助手CC！" +
             "深耕AI技术核心板块，对技术MCP、RAG、Prompt优化、Function Calling，以及AI框架LangChain等均有深厚积累与实践经验。\n" +
             "无论您在求职AI应用开发工程师岗位时，面临技术方案设计、项目经验梳理、面试难题拆解，或是想优化技术简历、打磨实战项目，都能向我倾诉。我会结合求职场景，精准聚焦痛点，引导您详述求职需求、技能短板与目标岗位细节，为您量身定制专属求职策略，助力高效斩获心仪offer！";
 

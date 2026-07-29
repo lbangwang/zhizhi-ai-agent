@@ -19,9 +19,9 @@
         <div class="app-grid">
           <button class="app-card love" type="button" @click="$router.push('/love-master')">
             <div class="card-glow" aria-hidden="true" />
-            <img class="app-avatar" :src="avatars.love" alt="CC面试官头像" />
+            <img class="app-avatar" :src="avatars.love" alt="AI面试官小助手CC头像" />
             <div class="app-body">
-              <h2>CC面试官</h2>
+              <h2>AI面试官小助手CC</h2>
               <p>深耕 AI 应用开发，助力技术方案、项目梳理与面试攻坚</p>
               <span class="enter-link">立即体验 <i>→</i></span>
             </div>

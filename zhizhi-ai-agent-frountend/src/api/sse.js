@@ -1,3 +1,5 @@
+import { resolveApiUrl } from './config.js'
+
 /**
  * 通过 SSE 流式请求后端接口
  * 按完整 SSE 事件回调（同一事件内多行 data 会用换行拼接）
@@ -8,7 +10,7 @@
  */
 export async function fetchSSE(url, params, onMessage, signal) {
   const searchParams = new URLSearchParams(params)
-  const fullUrl = `${url}?${searchParams.toString()}`
+  const fullUrl = `${resolveApiUrl(url)}?${searchParams.toString()}`
 
   const response = await fetch(fullUrl, {
     method: 'GET',

@@ -51,7 +51,7 @@ defineProps({
 const script = [
   { type: 'cmd', text: './launch-zhizhi-ai.sh' },
   { type: 'info', text: '正在初始化 AI 引擎...' },
-  { type: 'info', text: '加载 CC面试官与超级智能体模型...' },
+  { type: 'info', text: '加载 AI面试官小助手CC 与超级智能体模型...' },
   { type: 'info', text: '连接云端服务...' },
   { type: 'success', text: `${BRAND_NAME} 启动成功！选择下方应用开始体验` },
 ]

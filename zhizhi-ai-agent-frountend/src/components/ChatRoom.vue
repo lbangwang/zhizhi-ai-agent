@@ -248,6 +248,7 @@
 <script setup>
 import { computed, ref, nextTick, watch } from 'vue'
 import { fetchSSE } from '../api/sse.js'
+import { resolveApiUrl } from '../api/config.js'
 import { APP_AVATARS } from '../constants/apps.js'
 import { DEFAULT_MODEL, MODEL_OPTIONS } from '../constants/models.js'
 import SiteFooter from './SiteFooter.vue'
@@ -295,7 +296,7 @@ const props = defineProps({
     type: String,
     default: '/api/zhizhi-ai/stopChatByZhizhiManus',
   },
-  /** 停止接口 type：CC面试官 PROFESSIONAL，超级智能体 COMMON */
+  /** 停止接口 type：AI面试官小助手CC PROFESSIONAL，超级智能体 COMMON */
   stopType: {
     type: String,
     default: 'COMMON',
@@ -642,8 +643,9 @@ function notifyStopApi(userQuestion) {
   }
 
   // 停止接口固定为 stopChatByZhizhiManus，不会走 doChatBySynSSE / doChatByZhizhiManus
-  const stopUrl =
-    props.stopApiUrl || '/api/zhizhi-ai/stopChatByZhizhiManus'
+  const stopUrl = resolveApiUrl(
+    props.stopApiUrl || '/api/zhizhi-ai/stopChatByZhizhiManus',
+  )
   const params = new URLSearchParams({
     message: question,
     chatId: props.chatId || '',

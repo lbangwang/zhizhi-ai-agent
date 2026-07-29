@@ -1,5 +1,5 @@
 export const APP_AVATARS = {
-  love: '/avatars/love-master.svg',
+  love: '/avatars/cc-interviewer.svg',
   agent: '/avatars/super-agent.svg',
   loveUser: '/avatars/love-user.svg',
   agentUser: '/avatars/agent-user.svg',
