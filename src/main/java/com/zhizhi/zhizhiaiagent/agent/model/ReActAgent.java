@@ -10,49 +10,52 @@ import org.springframework.ai.chat.messages.Message;
 import java.util.List;
 
 /**
- * ReActAgent模式，实现思考、行动两个核心步骤
+ * ReAct 模式抽象：先思考再按需行动。
  */
 @Data
 @Slf4j
 @EqualsAndHashCode(callSuper = true)
-public abstract class ReActAgent extends BaseAgent{
+public abstract class ReActAgent extends BaseAgent {
 
-    /**
-     * 最近一步是否已产出最终回答（未再调用工具）
-     */
+    /** 最近一步是否已产出最终回答（未再调用工具） */
     private boolean lastStepFinalAnswer = false;
 
     /**
-     * 思考步骤：处理当前状态并执行下一步骤
+     * 思考：分析当前状态，决定是否需要行动。
+     *
+     * @return true 需要调用 {@link #act()}；false 表示可直接作为最终回答
      */
     public abstract Boolean think();
 
     /**
-     * 行动步骤：执行思考后的动作
+     * 行动：执行思考阶段规划的动作（如工具调用）。
+     *
+     * @return 行动结果摘要
      */
     public abstract String act();
 
     /**
-     * 获取最近一次思考的可展示文本（子类可覆盖）
+     * 获取最近一次思考的可展示文本；子类可覆盖。
+     *
+     * @return 思考文案，默认空串
      */
     public String getLastThinkText() {
         return "";
     }
 
     /**
-     * 执行单个步骤：思考➕行动
+     * 同步单步执行：先 think，无需行动则返回最终回答，否则执行 act。
+     *
+     * @return 本步结果文本
      */
     @Override
     public String step() {
         try {
             this.lastStepFinalAnswer = false;
-            Boolean think = this.think();
-            if (!think){
-                //如果没有工具调用，直接回复
+            Boolean needAct = this.think();
+            if (Boolean.FALSE.equals(needAct)) {
                 this.lastStepFinalAnswer = true;
                 return getFinalAnswer();
-
-//                return "思考完成，无需行动！！！";
             }
             return this.act();
         } catch (Exception e) {
@@ -62,13 +65,17 @@ public abstract class ReActAgent extends BaseAgent{
         }
     }
 
+    /**
+     * 从会话消息中取最近一条非空助手回复作为最终回答。
+     *
+     * @return 最终回答文本
+     */
     public String getFinalAnswer() {
-        List<Message> messageList = getMessageList();
-        // 从后往前找最后一个 AssistantMessage
-        for (int i = messageList.size() - 1; i >= 0; i--) {
-            Message msg = messageList.get(i);
-            if (msg instanceof AssistantMessage) {
-                String text = msg.getText();
+        List<Message> messages = getMessageList();
+        for (int i = messages.size() - 1; i >= 0; i--) {
+            Message msg = messages.get(i);
+            if (msg instanceof AssistantMessage assistantMessage) {
+                String text = assistantMessage.getText();
                 if (StringUtils.isNotBlank(text)) {
                     return text;
                 }

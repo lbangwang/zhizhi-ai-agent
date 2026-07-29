@@ -14,8 +14,8 @@
   --color-primary: #1f6f8b;
   --color-primary-hover: #185a71;
   --color-primary-soft: rgba(31, 111, 139, 0.14);
-  --color-accent-love: #c45c6a;
-  --color-accent-love-soft: rgba(196, 92, 106, 0.14);
+  --color-accent-love: #2f7a6b;
+  --color-accent-love-soft: rgba(47, 122, 107, 0.14);
   --color-accent-agent: #1f6f8b;
   --color-accent-agent-soft: rgba(31, 111, 139, 0.14);
 
@@ -35,9 +35,9 @@
 
   --page-bg:
     radial-gradient(ellipse 70% 55% at 8% 12%, rgba(31, 111, 139, 0.28), transparent 58%),
-    radial-gradient(ellipse 60% 50% at 92% 88%, rgba(196, 92, 106, 0.2), transparent 55%),
+    radial-gradient(ellipse 60% 50% at 92% 88%, rgba(47, 122, 107, 0.2), transparent 55%),
     radial-gradient(ellipse 50% 40% at 70% 20%, rgba(95, 168, 192, 0.16), transparent 50%),
-    linear-gradient(155deg, #d9e6ef 0%, #e8eef4 38%, #efe8e9 72%, #dce8f0 100%);
+    linear-gradient(155deg, #d9e6ef 0%, #e8eef4 38%, #e6efeb 72%, #dce8f0 100%);
 }
 
 *,

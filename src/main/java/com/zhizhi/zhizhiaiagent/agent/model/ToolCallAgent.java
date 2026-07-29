@@ -6,6 +6,7 @@ import com.zhizhi.zhizhiaiagent.agent.model.enums.AgentStatus;
 import lombok.Data;
 import lombok.EqualsAndHashCode;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.commons.lang3.StringUtils;
 import org.springframework.ai.chat.messages.AssistantMessage;
 import org.springframework.ai.chat.messages.Message;
 import org.springframework.ai.chat.messages.ToolResponseMessage;
@@ -17,154 +18,214 @@ import org.springframework.ai.model.tool.ToolCallingManager;
 import org.springframework.ai.model.tool.ToolExecutionResult;
 import org.springframework.ai.tool.ToolCallback;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.stream.Collectors;
 
+/**
+ * 带工具调用能力的 ReAct Agent：负责思考选工具、执行工具、综合最终用户回答。
+ */
 @Slf4j
 @Data
 @EqualsAndHashCode(callSuper = true)
-public class ToolCallAgent extends ReActAgent{
-    /**
-     * 可用工具集合
-     */
+public class ToolCallAgent extends ReActAgent {
+
+    private static final String TERMINATE_TOOL_NAME = "doTerminate";
+
+    private static final String SYNTHESIZE_USER_PROMPT = """
+            请基于以上信息，用中文、第一人称「我」自然地回复用户，给出最终答案。
+            要求：
+            1. 语气亲切流畅，不要生硬、不要像系统报告；结构用 Markdown 保持清晰；
+            2. 可以适当润色，例如「我帮你整理了一下」「我经过梳理后，列举出了下面这些…」，然后进入正文；
+            3. 不要输出 JSON；不要堆砌原始 URL；
+            4. 不要写工具过程汇报，例如「已成功获取网页内容」「完全满足用户需求」
+               「呈现给用户」「无需再调用其他工具」「现在即可输出最终回答」；
+            5. 信息不足时用自然口吻说明，并给出建议。
+            """;
+
+    /** 可用工具集合 */
     private final ToolCallback[] availableTools;
-
-    /**
-     * 处理当前状态并决定下一步行动
-     *
-     * @return 是否需要执行行动
-     */
-    @Override
-    public Boolean think() {
-        if (getNextStepPrompt() != null && !getNextStepPrompt().isEmpty()) {
-            UserMessage userMessage = new UserMessage(getNextStepPrompt());
-            getMessageList().add(userMessage);
-        }
-        List<Message> messageList = getMessageList();
-        Prompt prompt = new Prompt(messageList, chatOptions);
-        try {
-            // 获取带工具选项的响应
-            ChatResponse chatResponse = getChatClient().prompt(prompt)
-                    .system(getSystemPrompt())
-                    .tools(availableTools)
-                    .call()
-                    .chatResponse();
-            // 记录响应，用于 Act
-            this.toolCallChatResponse = chatResponse;
-
-            AssistantMessage assistantMessage = chatResponse.getResult().getOutput();
-            log.info("think.text:{}",assistantMessage.getText());
-            // 输出提示信息
-            String result = assistantMessage.getText();
-            List<AssistantMessage.ToolCall> toolCallList = assistantMessage.getToolCalls();
-            log.info(getName() + "的思考: " + result);
-            log.info(getName() + "选择了 " + toolCallList.size() + " 个工具来使用");
-            String toolCallInfo = toolCallList.stream()
-                    .map(toolCall -> String.format("工具名称：%s，参数：%s",
-                            toolCall.name(),
-                            toolCall.arguments())
-                    )
-                    .collect(Collectors.joining("\n"));
-            log.info(toolCallInfo);
-
-            //「深度思考」展示：模型推理文本 + 工具计划
-            StringBuilder thinkBuilder = new StringBuilder();
-            if (result != null && !result.isBlank()) {
-                thinkBuilder.append(result.trim());
-            }
-            if (!toolCallList.isEmpty()) {
-                if (!thinkBuilder.isEmpty()) {
-                    thinkBuilder.append("\n\n");
-                }
-                thinkBuilder.append("计划调用工具：\n").append(toolCallInfo);
-            }
-            this.lastThinkText = thinkBuilder.toString();
-
-            if (toolCallList.isEmpty()) {
-                // 只有不调用工具时，才记录助手消息
-                getMessageList().add(assistantMessage);
-                return false;
-            } else {
-                // 需要调用工具时，无需记录助手消息，因为调用工具时会自动记录
-                return true;
-            }
-        } catch (Exception e) {
-            log.error(getName() + "的思考过程遇到了问题: " + e.getMessage());
-            getMessageList().add(
-                    new AssistantMessage("处理时遇到错误: " + e.getMessage()));
-            return false;
-        }
-    }
-
-    /**
-     * 执行工具调用并处理结果
-     *
-     * @return 执行结果
-     */
-    @Override
-    public String act() {
-        if (!toolCallChatResponse.hasToolCalls()) {
-            return "没有工具调用";
-        }
-        // 调用工具
-        Prompt prompt = new Prompt(getMessageList(), chatOptions);
-        ToolExecutionResult toolExecutionResult = toolCallingManager.executeToolCalls(prompt, toolCallChatResponse);
-        // 记录消息上下文，conversationHistory 已经包含了助手消息和工具调用返回的结果
-        setMessageList(toolExecutionResult.conversationHistory());
-        // 当前工具调用的结果
-        ToolResponseMessage toolResponseMessage = (ToolResponseMessage) CollUtil.getLast(toolExecutionResult.conversationHistory());
-        String results = toolResponseMessage.getResponses().stream()
-                .map(response -> "工具 " + response.name() + " 完成了它的任务！结果: " + response.responseData())
-                .collect(Collectors.joining("\n"));
-        // 判断是否调用了终止工具
-        boolean terminateToolCalled = toolResponseMessage.getResponses().stream()
-                .anyMatch(response -> "doTerminate".equals(response.name()));
-        if (terminateToolCalled) {
-            setStatus(AgentStatus.FINISHED);
-        }
-        log.info(results);
-        return results;
-
-    }
-
-
-    /**
-     * 工具响应
-     */
-    private ChatResponse toolCallChatResponse;
-
-    /**
-     * 最近一次 think 的可展示文本（给前端深度思考区域）
-     */
-    private String lastThinkText = "";
-
-    @Override
-    public String getLastThinkText() {
-        return lastThinkText == null ? "" : lastThinkText;
-    }
-
-    /**
-     * 工具管理
-     */
+    /** 工具执行管理器 */
     private final ToolCallingManager toolCallingManager;
+    /** 模型调用选项（禁用框架内置自动工具执行） */
+    private final ChatOptions chatOptions;
+    /** 最近一次 think 的模型响应，供 act 读取 toolCalls */
+    private ChatResponse toolCallChatResponse;
+    /** 思考区展示文案 */
+    private String lastThinkText = "";
+    /** 行动区用户可读摘要 */
+    private String lastActDisplayText = "";
+    /** 最近计划/执行的工具名 */
+    private List<String> lastToolNames = new ArrayList<>();
 
     /**
-     * 禁止spring内部的工具调用机制，自己管理工具
+     * 使用默认 DashScope 工具代理选项构造 Agent。
+     *
+     * @param availableTools 可用工具
      */
-    private final ChatOptions chatOptions;
-
     public ToolCallAgent(ToolCallback[] availableTools) {
         this(availableTools, DashScopeChatOptions.builder()
                 .withProxyToolCalls(true)
                 .build());
     }
 
+    /**
+     * 使用指定 ChatOptions 构造 Agent。
+     *
+     * @param availableTools 可用工具
+     * @param chatOptions    模型选项
+     */
     public ToolCallAgent(ToolCallback[] availableTools, ChatOptions chatOptions) {
         super();
         this.availableTools = availableTools;
         this.toolCallingManager = ToolCallingManager.builder().build();
-        // 禁用 Spring AI 内置的工具调用机制，自己维护选项和消息上下文
         this.chatOptions = chatOptions;
     }
 
+    /**
+     * 思考阶段：追加下一步提示、调用模型，解析是否需要工具调用，并生成思考区展示文案。
+     *
+     * @return true 表示需要执行 {@link #act()}；false 表示本轮已是最终回答
+     */
+    @Override
+    public Boolean think() {
+        if (StringUtils.isNotBlank(getNextStepPrompt())) {
+            getMessageList().add(new UserMessage(getNextStepPrompt()));
+        }
+
+        try {
+            Prompt prompt = new Prompt(getMessageList(), chatOptions);
+            ChatResponse chatResponse = getChatClient().prompt(prompt)
+                    .system(getSystemPrompt())
+                    .tools(availableTools)
+                    .call()
+                    .chatResponse();
+            this.toolCallChatResponse = chatResponse;
+
+            AssistantMessage assistantMessage = chatResponse.getResult().getOutput();
+            String modelText = assistantMessage.getText();
+            List<AssistantMessage.ToolCall> toolCalls = assistantMessage.getToolCalls();
+            log.info("{} 的思考: {}", getName(), modelText);
+            log.info("{} 选择了 {} 个工具", getName(), toolCalls.size());
+
+            // 组装用户可见思考文案
+            StringBuilder display = new StringBuilder();
+            String thinkPart = AgentUserFacingFormatter.toThinkingDisplay(modelText);
+            if (StringUtils.isNotBlank(thinkPart)) {
+                display.append(thinkPart);
+            }
+            List<String> toolNames = toolCalls.stream()
+                    .map(AssistantMessage.ToolCall::name)
+                    .collect(Collectors.toList());
+            if (!toolCalls.isEmpty()) {
+                String plan = AgentUserFacingFormatter.toToolPlanDisplay(toolNames);
+                if (StringUtils.isNotBlank(plan)) {
+                    if (!display.isEmpty()) {
+                        display.append('\n');
+                    }
+                    display.append(plan);
+                }
+                String detail = toolCalls.stream()
+                        .map(call -> call.name() + " args=" + call.arguments())
+                        .collect(Collectors.joining("; "));
+                log.info("tool plan detail: {}", detail);
+            }
+            this.lastThinkText = display.toString();
+            this.lastToolNames = toolNames;
+
+            if (toolCalls.isEmpty()) {
+                getMessageList().add(assistantMessage);
+                return false;
+            }
+            return true;
+        } catch (Exception e) {
+            log.error("{} 的思考过程遇到了问题: {}", getName(), e.getMessage());
+            getMessageList().add(new AssistantMessage("处理时遇到错误: " + e.getMessage()));
+            this.lastThinkText = "思考过程出现异常，正在尝试恢复…";
+            return false;
+        }
+    }
+
+    /**
+     * 行动阶段：执行工具调用，完整结果写入会话上下文，返回给前端的仅是可读摘要。
+     *
+     * @return 工具执行摘要文本；无工具调用时返回空串
+     */
+    @Override
+    public String act() {
+        if (toolCallChatResponse == null || !toolCallChatResponse.hasToolCalls()) {
+            this.lastActDisplayText = "";
+            return "";
+        }
+
+        Prompt prompt = new Prompt(getMessageList(), chatOptions);
+        ToolExecutionResult executionResult =
+                toolCallingManager.executeToolCalls(prompt, toolCallChatResponse);
+        setMessageList(executionResult.conversationHistory());
+
+        ToolResponseMessage toolResponseMessage =
+                (ToolResponseMessage) CollUtil.getLast(executionResult.conversationHistory());
+        List<String> displayLines = new ArrayList<>();
+        List<String> toolNames = new ArrayList<>();
+        for (ToolResponseMessage.ToolResponse response : toolResponseMessage.getResponses()) {
+            toolNames.add(response.name());
+            displayLines.add(AgentUserFacingFormatter.toToolResultDisplay(
+                    response.name(), response.responseData()));
+            int rawLen = response.responseData() == null ? 0 : response.responseData().length();
+            log.info("tool {} raw length={}", response.name(), rawLen);
+        }
+        this.lastToolNames = toolNames;
+        this.lastActDisplayText = String.join("\n", displayLines);
+
+        boolean terminated = toolResponseMessage.getResponses().stream()
+                .anyMatch(response -> TERMINATE_TOOL_NAME.equals(response.name()));
+        if (terminated) {
+            setStatus(AgentStatus.FINISHED);
+        }
+        return this.lastActDisplayText;
+    }
+
+    /**
+     * 综合最终回答：不调用工具，基于当前上下文生成面向用户的 Markdown 正文。
+     * <p>
+     * 用于步数上限、terminate 或兜底补齐结论。
+     *
+     * @return 清洗后的用户可读最终回答
+     */
+    public String synthesizeUserFacingAnswer() {
+        getMessageList().add(new UserMessage(SYNTHESIZE_USER_PROMPT));
+        try {
+            ChatResponse response = getChatClient()
+                    .prompt(new Prompt(getMessageList()))
+                    .system(getSystemPrompt())
+                    .call()
+                    .chatResponse();
+            AssistantMessage assistantMessage = response.getResult().getOutput();
+            getMessageList().add(assistantMessage);
+            this.lastThinkText = "正在整理最终回答…";
+            return AgentUserFacingFormatter.toAnswerDisplay(assistantMessage.getText());
+        } catch (Exception e) {
+            log.error("{} 综合最终回答失败: {}", getName(), e.getMessage());
+            return "抱歉，整理最终结论时出现异常，请稍后重试。";
+        }
+    }
+
+    /**
+     * 获取最近一次思考区展示文案。
+     *
+     * @return 思考文案，不会返回 null
+     */
+    @Override
+    public String getLastThinkText() {
+        return lastThinkText == null ? "" : lastThinkText;
+    }
+
+    /**
+     * 获取最近一次行动摘要文案。
+     *
+     * @return 行动摘要，不会返回 null
+     */
+    public String getLastActDisplayText() {
+        return lastActDisplayText == null ? "" : lastActDisplayText;
+    }
 }

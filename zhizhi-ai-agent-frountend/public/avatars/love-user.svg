@@ -1,21 +1,23 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 96 96" fill="none">
   <defs>
-    <linearGradient id="loveUserBg" x1="10" y1="6" x2="86" y2="90" gradientUnits="userSpaceOnUse">
-      <stop stop-color="#FAD7DF"/>
-      <stop offset="1" stop-color="#EFA0B0"/>
+    <linearGradient id="loveUserBg" x1="12" y1="8" x2="88" y2="90" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#E8F4F1"/>
+      <stop offset="1" stop-color="#D3EBE4"/>
     </linearGradient>
-    <linearGradient id="loveUserHeart" x1="34" y1="30" x2="64" y2="68" gradientUnits="userSpaceOnUse">
-      <stop stop-color="#FFFFFF"/>
-      <stop offset="1" stop-color="#FFE8ED"/>
+    <linearGradient id="loveUserAccent" x1="28" y1="22" x2="72" y2="70" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#2F7A6B"/>
+      <stop offset="1" stop-color="#1F5C50"/>
     </linearGradient>
   </defs>
   <rect width="96" height="96" rx="28" fill="url(#loveUserBg)"/>
-  <circle cx="24" cy="22" r="8" fill="#FFFFFF" fill-opacity=".22"/>
-  <circle cx="76" cy="70" r="10" fill="#FFFFFF" fill-opacity=".16"/>
-  <path
-    d="M48 72c-1.1 0-2.2-.45-3-1.3C37.4 62.8 28 54.6 28 45.8 28 39.4 33 34.2 39.2 34.2c3.2 0 6.1 1.5 7.8 3.9 1.7-2.4 4.6-3.9 7.8-3.9C60.9 34.2 66 39.4 66 45.8c0 8.8-9.4 17-17 26-.8.85-1.9 1.3-3 1.3Z"
-    fill="url(#loveUserHeart)"
-  />
-  <path d="M22 54c2.6-2.8 6.8-2.6 8.8.4 2-3 6.2-3.2 8.8-.4-1.2 3.8-8.8 9.2-8.8 9.2S23.2 57.8 22 54Z" fill="#FFFFFF" fill-opacity=".55"/>
-  <path d="M68 28c1.7-1.9 4.5-1.7 5.8.3 1.3-2 4.1-2.2 5.8.3-.8 2.5-5.8 6.1-5.8 6.1S68.8 30.5 68 28Z" fill="#FFFFFF" fill-opacity=".5"/>
+  <!-- head -->
+  <circle cx="48" cy="34" r="15" fill="url(#loveUserAccent)"/>
+  <!-- shoulders -->
+  <path d="M22 78c4.2-13.5 13.5-21 26-21s21.8 7.5 26 21" stroke="url(#loveUserAccent)" stroke-width="10" stroke-linecap="round"/>
+  <!-- soft collar hint to distinguish from CC headset -->
+  <path d="M40 57.5c2.4 2.2 5.2 3.5 8 3.5s5.6-1.3 8-3.5" stroke="#FFFFFF" stroke-opacity=".45" stroke-width="2" stroke-linecap="round"/>
+  <!-- user badge -->
+  <circle cx="70" cy="68" r="14" fill="#FFFFFF" stroke="#2F7A6B" stroke-width="2"/>
+  <circle cx="70" cy="63" r="4.2" fill="#2F7A6B"/>
+  <path d="M62.5 75.5c1.8-4.2 4.6-6.2 7.5-6.2s5.7 2 7.5 6.2" stroke="#2F7A6B" stroke-width="2.4" stroke-linecap="round"/>
 </svg>

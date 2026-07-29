@@ -1,7 +1,7 @@
 import { defineConfig } from 'vite'
 import vue from '@vitejs/plugin-vue'
 
-const API_TARGET = 'https://zhizhi-ai-agent-285438-10-1456848923.sh.run.tcloudbase.com'
+const API_TARGET = 'http://localhost:8123'
 
 export default defineConfig({
   plugins: [vue()],
@@ -10,7 +10,6 @@ export default defineConfig({
       '/api': {
         target: API_TARGET,
         changeOrigin: true,
-        secure: true,
         // SSE 长连接
         timeout: 600000,
         configure: (proxy) => {

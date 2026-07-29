@@ -10,84 +10,64 @@ import org.springframework.ai.chat.messages.Message;
 import org.springframework.ai.chat.messages.UserMessage;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
+import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
 
 /**
- * 基类，用于代理状态和执行
+ * Agent 基类：维护运行状态与会话消息，提供同步执行与 SSE 流式执行入口。
  */
 @Slf4j
 @Data
 public abstract class BaseAgent {
-    /**
-     * 模型名称
-     */
+
+    private static final long SSE_TIMEOUT_MS = 300_000L;
+    private static final String FALLBACK_EMPTY_ANSWER = "抱歉，本次未能生成有效回答，请换个问法再试。";
+    private static final String LEGACY_MAX_STEP_HINT = "已达到最大推理步骤，以下为当前结论。";
+
+    /** Agent 名称 */
     private String name;
-
-    /**
-     * 模型状态
-     */
+    /** 运行状态 */
     private AgentStatus status = AgentStatus.IDLE;
-
-    /**
-     * 模型系统提示
-     */
+    /** 系统提示词 */
     private String systemPrompt;
-
-    /**
-     * 模型下一步提示词
-     */
+    /** 每轮下一步行动提示 */
     private String nextStepPrompt;
-
-    /**
-     * 执行控制，最大次数、当前次数
-     */
+    /** 最大推理步数 */
     private int maxSteps = 10;
+    /** 当前步序号 */
     private int currentStep = 1;
-
-    /**
-     * 模型执行器
-     */
+    /** 对话客户端 */
     private ChatClient chatClient;
-
-    /**
-     * 模型记忆(需要自主维护会话上下文）
-     */
+    /** 本轮会话消息 */
     private List<Message> messageList = new ArrayList<>();
 
     /**
-     *运行代理
+     * 同步执行 Agent：校验入参后循环调用 {@link #step()}，直到完成或达到最大步数。
+     *
+     * @param userPrompt 用户输入
+     * @return 各步骤结果拼接文本
      */
     public String run(String userPrompt) {
-        //状态处于非运行下
-        if (this.status != AgentStatus.IDLE){
+        if (this.status != AgentStatus.IDLE) {
             throw new BusinessException("模型正在运行中，请勿重复运行", "MODEL_RUNNING");
         }
-        //提示词非空
-        if (StringUtils.isBlank(userPrompt)){
+        if (StringUtils.isBlank(userPrompt)) {
             throw new BusinessException("用户提示词不能为空", "USER_PROMPT_EMPTY");
         }
-        //更改模型状态
-        this.status = AgentStatus.RUNNING;
-        //记录消息上下文
-        this.messageList.add(new UserMessage(userPrompt));
-        //保存返回结果
-        List<String> results = new ArrayList<>();
 
+        this.status = AgentStatus.RUNNING;
+        this.messageList.add(new UserMessage(userPrompt));
+        List<String> results = new ArrayList<>();
         try {
             this.currentStep = 1;
             while (this.currentStep <= this.maxSteps && this.status != AgentStatus.FINISHED) {
-                log.info("当前步骤：{}/{}", this.currentStep,this.maxSteps);
-                // 执行单个步骤
-                String stepResult = step();
-                String result = "step " + this.currentStep + ": " + stepResult;
-                results.add(result);
-
+                log.info("当前步骤：{}/{}", this.currentStep, this.maxSteps);
+                results.add("step " + this.currentStep + ": " + step());
                 this.currentStep++;
             }
-            //检查是否超过最大限制步骤
-            if (currentStep > maxSteps){
+            if (currentStep > maxSteps) {
                 this.status = AgentStatus.FINISHED;
                 results.add("模型执行完成，已超过最大步骤限制");
             }
@@ -96,130 +76,18 @@ public abstract class BaseAgent {
             this.status = AgentStatus.ERROR;
             log.error("模型运行异常", e);
             throw new BusinessException("模型运行异常", "MODEL_RUN_ERROR");
-        }finally {
-            //清理资源
+        } finally {
             this.cleanup();
         }
     }
 
-
+    /**
+     * SSE 流式执行入口：创建连接、绑定超时/完成回调，并异步启动流式对话编排。
+     *
+     * @param userPrompt 用户输入
+     */
     public SseEmitter runStream(String userPrompt) {
-        SseEmitter sseEmitter = new SseEmitter(300000L); // 设置超时时间为 5 分钟
-        CompletableFuture.runAsync(() -> {
-            //状态处于非运行下
-            try {
-                if (this.status != AgentStatus.IDLE){
-                    sseEmitter.send(AgentStreamEvent.error("模型正在运行中，请勿重复运行"));
-                    sseEmitter.complete();
-                    return;
-                }
-                //提示词非空
-                if (StringUtils.isBlank(userPrompt)){
-                    sseEmitter.send(AgentStreamEvent.error("用户提示词不能为空"));
-                    sseEmitter.complete();
-                    return;
-                }
-                //更改模型状态
-                this.status = AgentStatus.RUNNING;
-                //记录消息上下文
-                this.messageList.add(new UserMessage(userPrompt));
-
-                try {
-                    // 1) 先通知前端进入「思考中...」
-                    sseEmitter.send(AgentStreamEvent.thinkingStart());
-
-                    String finalAnswer = null;
-                    this.currentStep = 1;
-
-                    while (this.currentStep <= this.maxSteps && this.status != AgentStatus.FINISHED) {
-                        log.info("当前步骤：{}/{}", this.currentStep, this.maxSteps);
-
-                        // 2) 步骤开始：实时推送进度
-                        sseEmitter.send(AgentStreamEvent.thinkingProgress(
-                                this.currentStep, this.maxSteps, "正在分析问题并规划行动…"));
-
-                        if (this instanceof ReActAgent reActAgent) {
-                            reActAgent.setLastStepFinalAnswer(false);
-                            Boolean needAct = reActAgent.think();
-                            String thinkText = reActAgent.getLastThinkText();
-                            boolean isFinal = Boolean.FALSE.equals(needAct);
-                            reActAgent.setLastStepFinalAnswer(isFinal);
-
-                            if (StringUtils.isNotBlank(thinkText) || isFinal) {
-                                String display = StringUtils.defaultString(thinkText).trim();
-                                if (StringUtils.isBlank(display) && isFinal) {
-                                    display = "已完成问题分析，正在组织最终回答…";
-                                }
-                                String chunk = "【步骤 " + this.currentStep + " · 思考】\n" + display;
-                                sseEmitter.send(AgentStreamEvent.thinkingDelta(this.currentStep, chunk));
-                            }
-
-                            if (isFinal) {
-                                finalAnswer = StringUtils.trimToNull(reActAgent.getFinalAnswer());
-                                this.status = AgentStatus.FINISHED;
-                                break;
-                            }
-
-                            // 3) 工具执行阶段：完成后立即推送
-                            sseEmitter.send(AgentStreamEvent.thinkingProgress(
-                                    this.currentStep, this.maxSteps, "正在调用工具执行…"));
-
-                            String actResult = reActAgent.act();
-                            if (StringUtils.isNotBlank(actResult)) {
-                                String chunk = "【步骤 " + this.currentStep + " · 行动】\n" + actResult.trim();
-                                sseEmitter.send(AgentStreamEvent.thinkingDelta(this.currentStep, chunk));
-                            }
-
-                            if (this.status == AgentStatus.FINISHED) {
-                                finalAnswer = StringUtils.isNotBlank(actResult)
-                                        ? actResult.trim()
-                                        : "任务已完成。";
-                                break;
-                            }
-                        } else {
-                            String stepResult = step();
-                            if (StringUtils.isNotBlank(stepResult)) {
-                                String chunk = "【步骤 " + this.currentStep + "】\n" + stepResult.trim();
-                                sseEmitter.send(AgentStreamEvent.thinkingDelta(this.currentStep, chunk));
-                            }
-                        }
-
-                        this.currentStep++;
-                    }
-
-                    if (currentStep > maxSteps && this.status != AgentStatus.FINISHED) {
-                        this.status = AgentStatus.FINISHED;
-                        if (finalAnswer == null) {
-                            finalAnswer = "已达到最大推理步骤，以下为当前结论。";
-                        }
-                    }
-
-                    // 4) 思考完成（不重复推送全文）
-                    sseEmitter.send(AgentStreamEvent.thinkingDone(null));
-
-                    if (StringUtils.isBlank(finalAnswer) && this instanceof ReActAgent reActAgent) {
-                        finalAnswer = StringUtils.trimToNull(reActAgent.getFinalAnswer());
-                    }
-                    if (StringUtils.isBlank(finalAnswer)) {
-                        finalAnswer = "抱歉，本次未能生成有效回答。";
-                    }
-                    // 5) 最终回答
-                    sseEmitter.send(AgentStreamEvent.answerDone(finalAnswer));
-
-                    sseEmitter.complete();
-                } catch (Exception e) {
-                    this.status = AgentStatus.ERROR;
-                    log.error("模型运行异常", e);
-                    sseEmitter.send(AgentStreamEvent.error("模型运行异常：" + e.getMessage()));
-                    sseEmitter.complete();
-                }finally {
-                    //清理资源
-                    this.cleanup();
-                }
-            }catch (Exception e) {
-                sseEmitter.completeWithError( e);
-            }
-        });
+        SseEmitter sseEmitter = new SseEmitter(SSE_TIMEOUT_MS);
         sseEmitter.onTimeout(() -> {
             status = AgentStatus.ERROR;
             this.cleanup();
@@ -232,20 +100,191 @@ public abstract class BaseAgent {
             this.cleanup();
             log.info("SSE连接完成");
         });
+
+        CompletableFuture.runAsync(() -> {
+            try {
+                executeAgentStream(userPrompt, sseEmitter);
+            } catch (Exception e) {
+                sseEmitter.completeWithError(e);
+            }
+        });
         return sseEmitter;
     }
 
     /**
-     * 执行单个步骤
-     * @return
+     * 流式流程：校验状态 → 逐步 think/act → 兜底综合结论 → 推送思考完成与最终回答。
+     * 事件顺序：thinking_start → thinking_delta/tool_done → thinking_done → answer_done。
+     *
+     * @param userPrompt 用户输入
+     * @param sseEmitter SSE 输出通道
+     */
+    private void executeAgentStream(String userPrompt, SseEmitter sseEmitter) throws IOException {
+        if (this.status != AgentStatus.IDLE) {
+            sseEmitter.send(AgentStreamEvent.error("模型正在运行中，请勿重复运行"));
+            sseEmitter.complete();
+            return;
+        }
+        if (StringUtils.isBlank(userPrompt)) {
+            sseEmitter.send(AgentStreamEvent.error("用户提示词不能为空"));
+            sseEmitter.complete();
+            return;
+        }
+
+        this.status = AgentStatus.RUNNING;
+        this.messageList.add(new UserMessage(userPrompt));
+
+        try {
+            long thinkingStartedAt = System.currentTimeMillis();
+            sseEmitter.send(AgentStreamEvent.thinkingStart());
+
+            String finalAnswer = null;
+            this.currentStep = 1;
+            while (this.currentStep <= this.maxSteps && this.status != AgentStatus.FINISHED) {
+                log.info("当前步骤：{}/{}", this.currentStep, this.maxSteps);
+                boolean lastStep = this.currentStep >= this.maxSteps;
+                String phase = lastStep ? "正在整理最终结论…" : "正在分析问题并规划行动…";
+                sseEmitter.send(AgentStreamEvent.thinkingProgress(this.currentStep, this.maxSteps, phase));
+
+                if (this instanceof ReActAgent reActAgent) {
+                    String stepAnswer = runOneReActStep(reActAgent, lastStep, sseEmitter);
+                    if (stepAnswer != null || this.status == AgentStatus.FINISHED) {
+                        finalAnswer = stepAnswer;
+                        break;
+                    }
+                } else {
+                    String stepResult = step();
+                    if (StringUtils.isNotBlank(stepResult)
+                            && !AgentUserFacingFormatter.looksLikeRawToolDump(stepResult)) {
+                        sseEmitter.send(AgentStreamEvent.thinkingDelta(this.currentStep, stepResult.trim()));
+                    }
+                }
+                this.currentStep++;
+            }
+
+            if (this.status != AgentStatus.FINISHED) {
+                this.status = AgentStatus.FINISHED;
+            }
+
+            // 兜底：无有效结论时强制综合成用户可读回答
+            if (StringUtils.isBlank(finalAnswer)
+                    || AgentUserFacingFormatter.looksLikeRawToolDump(finalAnswer)
+                    || LEGACY_MAX_STEP_HINT.equals(finalAnswer)) {
+                if (this instanceof ToolCallAgent toolCallAgent) {
+                    sseEmitter.send(AgentStreamEvent.thinkingDelta(
+                            this.currentStep, "正在综合工具结果并生成最终回答…"));
+                    finalAnswer = toolCallAgent.synthesizeUserFacingAnswer();
+                } else if (this instanceof ReActAgent reActAgent) {
+                    finalAnswer = AgentUserFacingFormatter.toAnswerDisplay(reActAgent.getFinalAnswer());
+                }
+            }
+
+            long elapsedMs = System.currentTimeMillis() - thinkingStartedAt;
+            sseEmitter.send(AgentStreamEvent.thinkingDone(null, elapsedMs));
+            if (StringUtils.isBlank(finalAnswer)) {
+                finalAnswer = FALLBACK_EMPTY_ANSWER;
+            }
+            sseEmitter.send(AgentStreamEvent.answerDone(AgentUserFacingFormatter.toAnswerDisplay(finalAnswer)));
+            sseEmitter.complete();
+        } catch (Exception e) {
+            this.status = AgentStatus.ERROR;
+            log.error("模型运行异常", e);
+            sseEmitter.send(AgentStreamEvent.error("模型运行异常：" + e.getMessage()));
+            sseEmitter.complete();
+        } finally {
+            this.cleanup();
+        }
+    }
+
+    /**
+     * 执行一轮 ReAct：推送思考文案；若需行动则调用工具并推送摘要；必要时综合最终回答。
+     *
+     * @param reActAgent 当前 ReAct 智能体
+     * @param lastStep   是否已到最大步
+     * @param sseEmitter SSE 输出通道
+     * @return 本步已得到最终回答时返回文案；否则返回 null 表示继续下一步
+     */
+    private String runOneReActStep(ReActAgent reActAgent, boolean lastStep, SseEmitter sseEmitter)
+            throws IOException {
+        reActAgent.setLastStepFinalAnswer(false);
+        Boolean needAct = reActAgent.think();
+        boolean isFinal = Boolean.FALSE.equals(needAct);
+        reActAgent.setLastStepFinalAnswer(isFinal);
+
+        // 推送思考区文案
+        String thinkText = reActAgent.getLastThinkText();
+        String display = StringUtils.defaultString(thinkText).trim();
+        if (StringUtils.isBlank(display) && isFinal) {
+            display = "已完成问题分析，正在组织最终回答…";
+        }
+        if (StringUtils.isNotBlank(display) || isFinal) {
+            if (StringUtils.isNotBlank(display)) {
+                sseEmitter.send(AgentStreamEvent.thinkingDelta(this.currentStep, display));
+            }
+        }
+
+        if (isFinal) {
+            this.status = AgentStatus.FINISHED;
+            return AgentUserFacingFormatter.toAnswerDisplay(reActAgent.getFinalAnswer());
+        }
+
+        // 最后一步仍想调工具：跳过工具，直接综合，保证有结论
+        if (lastStep) {
+            sseEmitter.send(AgentStreamEvent.thinkingDelta(
+                    this.currentStep, "已接近步骤上限，改为综合已有信息生成回答…"));
+            this.status = AgentStatus.FINISHED;
+            return synthesizeFinalAnswer(reActAgent);
+        }
+
+        // 执行工具并推送用户可读摘要
+        sseEmitter.send(AgentStreamEvent.thinkingProgress(
+                this.currentStep, this.maxSteps, "正在调用工具…"));
+        String actSummary = reActAgent.act();
+        if (reActAgent instanceof ToolCallAgent toolCallAgent
+                && StringUtils.isNotBlank(toolCallAgent.getLastActDisplayText())) {
+            sseEmitter.send(AgentStreamEvent.thinkingDelta(
+                    this.currentStep, toolCallAgent.getLastActDisplayText()));
+            for (String toolName : toolCallAgent.getLastToolNames()) {
+                sseEmitter.send(AgentStreamEvent.toolDone(
+                        this.currentStep,
+                        toolName,
+                        AgentUserFacingFormatter.toolLabel(toolName) + " 已完成"));
+            }
+        } else if (StringUtils.isNotBlank(actSummary)
+                && !AgentUserFacingFormatter.looksLikeRawToolDump(actSummary)) {
+            sseEmitter.send(AgentStreamEvent.thinkingDelta(this.currentStep, actSummary));
+        }
+
+        // terminate：工具摘要不能当作最终答案，需再综合一轮
+        if (this.status == AgentStatus.FINISHED) {
+            return synthesizeFinalAnswer(reActAgent);
+        }
+        return null;
+    }
+
+    /**
+     * 综合生成面向用户的最终回答（优先走 ToolCallAgent 无工具再生成）。
+     *
+     * @param reActAgent 当前智能体
+     * @return 用户可读最终回答
+     */
+    private String synthesizeFinalAnswer(ReActAgent reActAgent) {
+        if (reActAgent instanceof ToolCallAgent toolCallAgent) {
+            return toolCallAgent.synthesizeUserFacingAnswer();
+        }
+        return AgentUserFacingFormatter.toAnswerDisplay(reActAgent.getFinalAnswer());
+    }
+
+    /**
+     * 同步模式下的单步执行，由子类实现具体逻辑。
+     *
+     * @return 本步执行结果文本
      */
     public abstract String step();
 
-
     /**
-     * 清理资源
+     * 清理本轮运行资源；子类可覆盖扩展。
      */
     protected void cleanup() {
-        //子类重写
+        // 默认无额外资源
     }
 }

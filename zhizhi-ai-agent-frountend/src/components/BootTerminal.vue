@@ -135,7 +135,7 @@ onUnmounted(() => {
   background: linear-gradient(
     120deg,
     rgba(31, 111, 139, 0.85),
-    rgba(196, 92, 106, 0.75),
+    rgba(47, 122, 107, 0.75),
     rgba(95, 168, 192, 0.9),
     rgba(31, 111, 139, 0.85)
   );
@@ -204,7 +204,7 @@ onUnmounted(() => {
 
 .dot.love {
   background: var(--color-accent-love);
-  box-shadow: 0 0 10px rgba(196, 92, 106, 0.55);
+  box-shadow: 0 0 10px rgba(47, 122, 107, 0.55);
   animation-delay: 0s;
 }
 
@@ -253,7 +253,7 @@ onUnmounted(() => {
   line-height: 1.7;
   background:
     radial-gradient(ellipse 80% 50% at 8% 0%, rgba(31, 111, 139, 0.1), transparent 55%),
-    radial-gradient(ellipse 70% 45% at 92% 100%, rgba(196, 92, 106, 0.08), transparent 50%),
+    radial-gradient(ellipse 70% 45% at 92% 100%, rgba(47, 122, 107, 0.08), transparent 50%),
     linear-gradient(180deg, rgba(244, 248, 252, 0.55), rgba(240, 245, 249, 0.72));
 }
 
@@ -335,7 +335,7 @@ onUnmounted(() => {
     transform: translateY(-6px);
     box-shadow:
       0 22px 48px rgba(7, 21, 37, 0.18),
-      0 0 36px rgba(196, 92, 106, 0.16);
+      0 0 36px rgba(47, 122, 107, 0.16);
   }
 }
 

@@ -6,53 +6,114 @@ import java.util.LinkedHashMap;
 import java.util.Map;
 
 /**
- * 超级智能体 SSE 事件：thinking_* / answer_* / error
+ * 超级智能体 SSE 事件工厂，将结构化事件序列化为 JSON 字符串推送给前端。
  */
 public final class AgentStreamEvent {
 
     private AgentStreamEvent() {
     }
 
+    /**
+     * 构建「开始思考」事件。
+     *
+     * @return JSON 事件字符串
+     */
     public static String thinkingStart() {
-        return of("thinking_start", null, null, null);
-    }
-
-    public static String thinkingDelta(int step, String text) {
-        return of("thinking_delta", step, text, null);
+        return toJson("thinking_start", null, null, null, null);
     }
 
     /**
-     * @param text 可为 null：前端保留已累积的思考内容，仅切换为「已完成」状态
+     * 构建思考过程增量事件。
+     *
+     * @param step 当前步号
+     * @param text 增量文本
+     * @return JSON 事件字符串
      */
-    public static String thinkingDone(String text) {
-        return of("thinking_done", null, text, null);
+    public static String thinkingDelta(int step, String text) {
+        return toJson("thinking_delta", step, text, null, null);
     }
 
+    /**
+     * 构建「思考结束」事件。
+     *
+     * @param text      可为 null：前端保留已累积内容，仅切换状态
+     * @param elapsedMs 思考耗时（毫秒）
+     * @return JSON 事件字符串
+     */
+    public static String thinkingDone(String text, Long elapsedMs) {
+        return toJson("thinking_done", null, text, null, elapsedMs);
+    }
+
+    /**
+     * 构建步骤进度文案（以 thinking_delta 形式推送，便于前端统一处理）。
+     *
+     * @param step     当前步
+     * @param maxSteps 最大步
+     * @param phase    阶段描述
+     * @return JSON 事件字符串
+     */
     public static String thinkingProgress(int step, int maxSteps, String phase) {
-        String text = "▶ 第 " + step + "/" + maxSteps + " 步：" + phase;
-        return of("thinking_delta", step, text, null);
+        String text = "第 " + step + "/" + maxSteps + " 步：" + phase;
+        return toJson("thinking_delta", step, text, null, null);
     }
 
+    /**
+     * 构建单个工具执行完成事件。
+     *
+     * @param step    当前步
+     * @param tool    工具名
+     * @param summary 用户可读摘要
+     * @return JSON 事件字符串
+     */
+    public static String toolDone(int step, String tool, String summary) {
+        return toJson("tool_done", step, summary, tool, null);
+    }
+
+    /**
+     * 构建最终回答事件。
+     *
+     * @param text 最终回答正文
+     * @return JSON 事件字符串
+     */
     public static String answerDone(String text) {
-        return of("answer_done", null, text, null);
+        return toJson("answer_done", null, text, null, null);
     }
 
+    /**
+     * 构建错误事件。
+     *
+     * @param message 错误信息
+     * @return JSON 事件字符串
+     */
     public static String error(String message) {
-        return of("error", null, message, null);
+        return toJson("error", null, message, null, null);
     }
 
-    private static String of(String type, Integer step, String text, String tool) {
-        Map<String, Object> map = new LinkedHashMap<>();
-        map.put("type", type);
+    /**
+     * 将事件字段组装为 JSON 字符串。
+     *
+     * @param type      事件类型
+     * @param step      步号（可空）
+     * @param text      文本（可空）
+     * @param tool      工具名（可空）
+     * @param elapsedMs 耗时毫秒（可空）
+     * @return JSON 字符串
+     */
+    private static String toJson(String type, Integer step, String text, String tool, Long elapsedMs) {
+        Map<String, Object> payload = new LinkedHashMap<>();
+        payload.put("type", type);
         if (step != null) {
-            map.put("step", step);
+            payload.put("step", step);
         }
         if (text != null) {
-            map.put("text", text);
+            payload.put("text", text);
         }
         if (tool != null) {
-            map.put("tool", tool);
+            payload.put("tool", tool);
         }
-        return JSONUtil.toJsonStr(map);
+        if (elapsedMs != null) {
+            payload.put("elapsedMs", elapsedMs);
+        }
+        return JSONUtil.toJsonStr(payload);
     }
 }

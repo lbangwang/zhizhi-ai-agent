@@ -91,7 +91,7 @@ const avatars = APP_AVATARS
   height: min(360px, 60vw);
   right: -8%;
   bottom: 8%;
-  background: rgba(196, 92, 106, 0.22);
+  background: rgba(47, 122, 107, 0.22);
   animation-delay: -4s;
 }
 
@@ -157,7 +157,7 @@ const avatars = APP_AVATARS
     110deg,
     #0f1c2e 0%,
     #1f6f8b 28%,
-    #c45c6a 55%,
+    #2f7a6b 55%,
     #1f6f8b 78%,
     #0f1c2e 100%
   );
@@ -225,7 +225,7 @@ const avatars = APP_AVATARS
 }
 
 .app-card.love .card-glow {
-  background: rgba(196, 92, 106, 0.45);
+  background: rgba(47, 122, 107, 0.45);
 }
 
 .app-card.agent .card-glow {
@@ -239,7 +239,7 @@ const avatars = APP_AVATARS
   }
 
   .app-card.love:hover {
-    border-color: rgba(196, 92, 106, 0.45);
+    border-color: rgba(47, 122, 107, 0.45);
   }
 
   .app-card.agent:hover {

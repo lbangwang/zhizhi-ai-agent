@@ -55,11 +55,7 @@
                   <span class="thinking-left">
                     <span class="thinking-icon" aria-hidden="true">◎</span>
                     <span class="thinking-title">
-                      {{
-                        msg.thinking.status === 'in_progress'
-                          ? '思考中...'
-                          : '已完成深度思考'
-                      }}
+                      {{ thinkingTitle(msg) }}
                     </span>
                   </span>
                   <span class="thinking-chevron" aria-hidden="true">
@@ -75,9 +71,11 @@
                 </div>
               </div>
 
-              <div v-if="msg.answer?.text" class="answer-body">
-                <p class="bubble-text">{{ msg.answer.text }}</p>
-              </div>
+              <div
+                v-if="msg.answer?.text"
+                class="answer-body markdown-body"
+                v-html="renderMarkdown(msg.answer.text)"
+              />
               <template v-else-if="!msg.thinking">
                 <p class="bubble-text">{{ msg.content }}</p>
                 <span v-if="msg.loading" class="typing-cursor">|</span>
@@ -86,7 +84,7 @@
                 v-else-if="msg.loading && !msg.answer?.text"
                 class="typing-cursor"
               >|</span>
-            </div>
+              </div>
           </div>
           <div
             v-if="msg.role === 'user' && msg.content && editingIndex !== index"
@@ -247,12 +245,51 @@
 
 <script setup>
 import { computed, ref, nextTick, watch } from 'vue'
+import { marked } from 'marked'
+import DOMPurify from 'dompurify'
 import { fetchSSE } from '../api/sse.js'
 import { resolveApiUrl } from '../api/config.js'
 import { APP_AVATARS } from '../constants/apps.js'
 import { DEFAULT_MODEL, MODEL_OPTIONS } from '../constants/models.js'
 import SiteFooter from './SiteFooter.vue'
 import ParticleBackground from './ParticleBackground.vue'
+
+marked.setOptions({
+  gfm: true,
+  breaks: false,
+})
+
+/** 压缩多余空行，避免结论区段落/列表间距过大 */
+function compactMarkdownSource(text) {
+  return String(text)
+    .replace(/\r\n/g, '\n')
+    .replace(/[ \t]+\n/g, '\n')
+    .replace(/\n{3,}/g, '\n\n')
+    // 标题 / 加粗行后的空行
+    .replace(/(\*\*[^*\n]+\*\*)\n\n+/g, '$1\n')
+    .replace(/^(#{1,6}\s+[^\n]+)\n\n+/gm, '$1\n')
+    // 列表项之间、分类标题与列表之间去掉空行
+    .replace(/\n\n+(?=(\s*[-*+•○] |\s*\d+\. ))/g, '\n')
+    .replace(/([^\n])\n\n+(?=\d+\. )/g, '$1\n')
+    .trim()
+}
+
+function renderMarkdown(text) {
+  if (!text) return ''
+  let html = marked.parse(compactMarkdownSource(text), { async: false })
+  // 去掉空段落、多余换行标签造成的视觉空隙
+  html = String(html)
+    .replace(/<p>\s*(?:<br\s*\/?>)?\s*<\/p>/gi, '')
+    .replace(/(<\/(?:li|p|h[1-6])>)\s+(?=<(?:li|p|h[1-6]|ul|ol))/gi, '$1')
+  return DOMPurify.sanitize(html)
+}
+
+function thinkingTitle(msg) {
+  if (!msg?.thinking) return ''
+  if (msg.thinking.status === 'in_progress') return '思考中...'
+  const seconds = Math.max(1, Math.round((msg.thinking.elapsedMs || 0) / 1000))
+  return `已思考（用时 ${seconds} 秒）`
+}
 
 const props = defineProps({
   title: {
@@ -395,6 +432,8 @@ function createAgentMessage() {
       status: 'in_progress',
       text: '',
       collapsed: false,
+      startedAt: Date.now(),
+      elapsedMs: 0,
     },
     answer: {
       status: 'idle',
@@ -538,6 +577,8 @@ function handleAgentEvent(raw, aiIndex) {
       msg.thinking.status = 'in_progress'
       msg.thinking.collapsed = false
       msg.thinking.text = msg.thinking.text || ''
+      msg.thinking.startedAt = Date.now()
+      msg.thinking.elapsedMs = 0
       msg.loading = true
       break
     case 'thinking_delta':
@@ -545,14 +586,32 @@ function handleAgentEvent(raw, aiIndex) {
       msg.thinking.collapsed = false
       if (event.text) {
         const readable = formatThinkingText(event.text)
+        // 过滤仍可能漏出的原始工具 dump
+        if (/工具 .+ 完成了它的任务/.test(readable) || /\\"title\\"/.test(readable)) {
+          break
+        }
         msg.thinking.text = msg.thinking.text
           ? `${msg.thinking.text}\n\n${readable}`
           : readable
       }
       break
+    case 'tool_done':
+      msg.thinking.status = 'in_progress'
+      msg.thinking.collapsed = false
+      if (event.text) {
+        const line = `✓ ${event.text}`
+        msg.thinking.text = msg.thinking.text
+          ? `${msg.thinking.text}\n${line}`
+          : line
+      }
+      break
     case 'thinking_done':
-      // 只切换状态，不覆盖已流式累积的思考内容
       msg.thinking.status = 'done'
+      if (typeof event.elapsedMs === 'number') {
+        msg.thinking.elapsedMs = event.elapsedMs
+      } else if (msg.thinking.startedAt) {
+        msg.thinking.elapsedMs = Date.now() - msg.thinking.startedAt
+      }
       if (event.text && !msg.thinking.text) {
         msg.thinking.text = String(event.text)
           .split(/\n\n+/)
@@ -574,6 +633,9 @@ function handleAgentEvent(raw, aiIndex) {
       if (msg.thinking.status === 'in_progress') {
         msg.thinking.status = 'done'
         msg.thinking.collapsed = true
+        if (msg.thinking.startedAt) {
+          msg.thinking.elapsedMs = Date.now() - msg.thinking.startedAt
+        }
       }
       msg.loading = false
       break
@@ -774,7 +836,7 @@ async function sendMessage(overrideText) {
 .chat-room-wrapper[data-accent='love'] {
   --accent: var(--color-accent-love);
   --accent-soft: var(--color-accent-love-soft);
-  --accent-hover: #a84a57;
+  --accent-hover: #246355;
 }
 
 .orb {
@@ -1148,6 +1210,116 @@ async function sendMessage(overrideText) {
   background: rgba(255, 255, 255, 0.92);
   border: 1px solid rgba(255, 255, 255, 0.8);
   box-shadow: var(--shadow-soft);
+}
+
+.markdown-body {
+  color: var(--color-text);
+  font-size: 14px;
+  line-height: 1.6;
+  word-break: break-word;
+}
+
+.markdown-body :deep(p) {
+  margin: 0 0 0.28em;
+}
+
+.markdown-body :deep(p:last-child) {
+  margin-bottom: 0;
+}
+
+.markdown-body :deep(p:empty) {
+  display: none;
+}
+
+.markdown-body :deep(h1),
+.markdown-body :deep(h2),
+.markdown-body :deep(h3) {
+  margin: 0.5em 0 0.2em;
+  font-weight: 700;
+  line-height: 1.35;
+  color: var(--color-text);
+}
+
+.markdown-body :deep(h1:first-child),
+.markdown-body :deep(h2:first-child),
+.markdown-body :deep(h3:first-child),
+.markdown-body :deep(p:first-child) {
+  margin-top: 0;
+}
+
+.markdown-body :deep(h1) { font-size: 1.12em; }
+.markdown-body :deep(h2) { font-size: 1.06em; }
+.markdown-body :deep(h3) { font-size: 1.02em; }
+
+.markdown-body :deep(ul),
+.markdown-body :deep(ol) {
+  margin: 0.15em 0 0.3em;
+  padding-left: 1.25em;
+}
+
+.markdown-body :deep(li) {
+  margin: 0;
+  padding: 0.12em 0;
+  line-height: 1.6;
+}
+
+.markdown-body :deep(li + li) {
+  margin-top: 0.18em;
+}
+
+.markdown-body :deep(li > p) {
+  margin: 0 !important;
+}
+
+.markdown-body :deep(li > p + p) {
+  margin-top: 0.12em !important;
+}
+
+.markdown-body :deep(li > ul),
+.markdown-body :deep(li > ol) {
+  margin: 0.1em 0 0.12em;
+  padding-left: 1.1em;
+}
+
+.markdown-body :deep(ul ul),
+.markdown-body :deep(ol ul),
+.markdown-body :deep(ul ol),
+.markdown-body :deep(ol ol) {
+  margin: 0.08em 0;
+}
+
+.markdown-body :deep(strong) {
+  font-weight: 700;
+}
+
+.markdown-body :deep(a) {
+  color: var(--accent);
+  text-decoration: none;
+}
+
+.markdown-body :deep(a:hover) {
+  text-decoration: underline;
+}
+
+.markdown-body :deep(code) {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 0.92em;
+  padding: 0.1em 0.35em;
+  border-radius: 4px;
+  background: rgba(15, 28, 46, 0.06);
+}
+
+.markdown-body :deep(pre) {
+  margin: 0.3em 0;
+  padding: 8px 10px;
+  overflow-x: auto;
+  border-radius: 10px;
+  background: rgba(15, 28, 46, 0.06);
+}
+
+.markdown-body :deep(pre code) {
+  padding: 0;
+  background: transparent;
 }
 
 .typing-cursor {
