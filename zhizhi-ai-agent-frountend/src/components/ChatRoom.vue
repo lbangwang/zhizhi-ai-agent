@@ -64,26 +64,17 @@
                 </button>
                 <div v-show="!msg.thinking.collapsed" class="thinking-body">
                   <pre class="thinking-text">{{ msg.thinking.text || ' ' }}</pre>
-                  <span
-                    v-if="msg.thinking.status === 'in_progress'"
-                    class="typing-cursor"
-                  >|</span>
                 </div>
               </div>
 
               <div
-                v-if="msg.answer?.text"
+                v-if="msg.answer?.text || msg.answer?.status === 'streaming'"
                 class="answer-body markdown-body"
                 v-html="renderMarkdown(msg.answer.text)"
               />
               <template v-else-if="!msg.thinking">
                 <p class="bubble-text">{{ msg.content }}</p>
-                <span v-if="msg.loading" class="typing-cursor">|</span>
               </template>
-              <span
-                v-else-if="msg.loading && !msg.answer?.text"
-                class="typing-cursor"
-              >|</span>
               </div>
           </div>
           <div
@@ -244,7 +235,7 @@
 </template>
 
 <script setup>
-import { computed, ref, nextTick, watch } from 'vue'
+import { computed, ref, nextTick, watch, onUnmounted } from 'vue'
 import { marked } from 'marked'
 import DOMPurify from 'dompurify'
 import { fetchSSE } from '../api/sse.js'
@@ -288,7 +279,7 @@ function thinkingTitle(msg) {
   if (!msg?.thinking) return ''
   if (msg.thinking.status === 'in_progress') return '思考中...'
   const seconds = Math.max(1, Math.round((msg.thinking.elapsedMs || 0) / 1000))
-  return `已思考（用时 ${seconds} 秒）`
+  return `思考完成（用时 ${seconds} 秒）`
 }
 
 const props = defineProps({
@@ -438,7 +429,204 @@ function createAgentMessage() {
     answer: {
       status: 'idle',
       text: '',
+      fullText: '',
     },
+  }
+}
+
+/** 打字机：思考区与结论区共用，逐字吐出，无闪烁光标 */
+const TYPEWRITER_DELAY_MS = 48
+const TYPEWRITER_CHARS_PER_TICK = 1
+
+let typewriterTimer = null
+let typewriterGen = 0
+/** @type {string[]} */
+let pendingThinkingChars = []
+/** @type {object | null} */
+let typewriterMsg = null
+let thinkingFinishRequested = false
+/** @type {string | null} */
+let pendingAnswerFullText = null
+
+function clearTypewriterTimer() {
+  if (typewriterTimer != null) {
+    clearTimeout(typewriterTimer)
+    typewriterTimer = null
+  }
+}
+
+function resetTypewriterState() {
+  clearTypewriterTimer()
+  typewriterGen += 1
+  pendingThinkingChars = []
+  typewriterMsg = null
+  thinkingFinishRequested = false
+  pendingAnswerFullText = null
+}
+
+function hasThinkingPending() {
+  return pendingThinkingChars.length > 0
+}
+
+function enqueueThinkingText(msg, chunk, separator = '\n\n') {
+  if (!msg?.thinking || !chunk) return
+  typewriterMsg = msg
+  const needSep = Boolean(msg.thinking.text) || pendingThinkingChars.length > 0
+  const piece = needSep ? `${separator}${chunk}` : chunk
+  pendingThinkingChars.push(...Array.from(piece))
+  ensureTypewriterPump()
+}
+
+function applyThinkingFinished(msg) {
+  if (!msg?.thinking) return
+  msg.thinking.status = 'done'
+  msg.thinking.collapsed = true
+  thinkingFinishRequested = false
+}
+
+function beginAnswerTypewriter(msg, fullText) {
+  const text = String(fullText || '')
+  const chars = Array.from(text)
+  msg.answer.fullText = text
+  msg.answer.status = 'streaming'
+  msg.answer.text = ''
+  msg.content = ''
+  msg.loading = true
+  pendingAnswerFullText = null
+
+  if (!chars.length) {
+    msg.answer.status = 'done'
+    msg.loading = false
+    isLoading.value = false
+    return
+  }
+
+  // 复用 pendingThinkingChars 槽位之外：把结论字符放进 answer 专用队列
+  msg.answer._pendingChars = chars
+  msg.answer._revealIndex = 0
+  ensureTypewriterPump()
+}
+
+function startAnswerTypewriter(msg, fullText) {
+  // 若思考还在打字，等排空后再开始结论
+  if (hasThinkingPending() || thinkingFinishRequested) {
+    pendingAnswerFullText = String(fullText || '')
+    typewriterMsg = msg
+    ensureTypewriterPump()
+    return
+  }
+  beginAnswerTypewriter(msg, fullText)
+}
+
+function stopAnswerTypewriter(msg, { flush = false } = {}) {
+  clearTypewriterTimer()
+  typewriterGen += 1
+  if (pendingThinkingChars.length && (msg || typewriterMsg)?.thinking) {
+    const target = msg || typewriterMsg
+    target.thinking.text =
+      (target.thinking.text || '') + pendingThinkingChars.join('')
+  }
+  pendingThinkingChars = []
+  thinkingFinishRequested = false
+  pendingAnswerFullText = null
+
+  if (!msg?.answer) {
+    typewriterMsg = null
+    return
+  }
+  if (Array.isArray(msg.answer._pendingChars)) {
+    if (flush || msg.answer.fullText) {
+      msg.answer.text = msg.answer.fullText || msg.answer._pendingChars.join('')
+      msg.content = msg.answer.text
+    }
+    delete msg.answer._pendingChars
+    delete msg.answer._revealIndex
+  } else if (flush && msg.answer.fullText) {
+    msg.answer.text = msg.answer.fullText
+    msg.content = msg.answer.text
+  }
+  if (msg.answer.status === 'streaming') {
+    msg.answer.status = 'done'
+  }
+  msg.loading = false
+  typewriterMsg = null
+}
+
+function ensureTypewriterPump() {
+  if (typewriterTimer != null) return
+  const gen = typewriterGen
+  const msg = typewriterMsg
+  if (!msg) return
+
+  const tick = () => {
+    if (gen !== typewriterGen) return
+
+    // 1) 先吐思考区
+    if (pendingThinkingChars.length > 0) {
+      const n = Math.min(TYPEWRITER_CHARS_PER_TICK, pendingThinkingChars.length)
+      const next = pendingThinkingChars.splice(0, n).join('')
+      msg.thinking.text = (msg.thinking.text || '') + next
+      msg.thinking.status = 'in_progress'
+      msg.thinking.collapsed = false
+      typewriterTimer = setTimeout(tick, TYPEWRITER_DELAY_MS)
+      return
+    }
+
+    // 2) 思考排空后，落实 thinking_done
+    if (thinkingFinishRequested) {
+      applyThinkingFinished(msg)
+    }
+
+    // 3) 有排队的最终结论，开始打字
+    if (pendingAnswerFullText != null && msg.answer?.status !== 'streaming') {
+      const full = pendingAnswerFullText
+      pendingAnswerFullText = null
+      beginAnswerTypewriter(msg, full)
+      // beginAnswerTypewriter 会再次 ensure；此处继续走结论分支
+    }
+
+    // 4) 吐结论区
+    const pending = msg.answer?._pendingChars
+    if (Array.isArray(pending) && msg.answer.status === 'streaming') {
+      let index = msg.answer._revealIndex || 0
+      if (index < pending.length) {
+        const n = Math.min(TYPEWRITER_CHARS_PER_TICK, pending.length - index)
+        index += n
+        msg.answer._revealIndex = index
+        msg.answer.text = pending.slice(0, index).join('')
+        msg.content = msg.answer.text
+        typewriterTimer = setTimeout(tick, TYPEWRITER_DELAY_MS)
+        return
+      }
+      delete msg.answer._pendingChars
+      delete msg.answer._revealIndex
+      msg.answer.status = 'done'
+      msg.loading = false
+      isLoading.value = false
+      typewriterTimer = null
+      typewriterMsg = null
+      return
+    }
+
+    typewriterTimer = null
+    if (!hasThinkingPending() && msg.answer?.status !== 'streaming') {
+      typewriterMsg = null
+    }
+  }
+
+  typewriterTimer = setTimeout(tick, 0)
+}
+
+function requestThinkingFinish(msg) {
+  typewriterMsg = msg
+  thinkingFinishRequested = true
+  if (!hasThinkingPending()) {
+    applyThinkingFinished(msg)
+    if (pendingAnswerFullText != null) {
+      ensureTypewriterPump()
+    }
+  } else {
+    ensureTypewriterPump()
   }
 }
 
@@ -557,18 +745,14 @@ function handleAgentEvent(raw, aiIndex) {
     // 兼容旧的纯文本 step 输出
     msg.thinking.status = 'in_progress'
     msg.thinking.collapsed = false
-    msg.thinking.text = msg.thinking.text
-      ? `${msg.thinking.text}\n\n${raw}`
-      : raw
+    enqueueThinkingText(msg, raw)
     return
   }
 
   if (!event?.type) {
     msg.thinking.status = 'in_progress'
     msg.thinking.collapsed = false
-    msg.thinking.text = msg.thinking.text
-      ? `${msg.thinking.text}\n\n${raw}`
-      : raw
+    enqueueThinkingText(msg, raw)
     return
   }
 
@@ -580,6 +764,7 @@ function handleAgentEvent(raw, aiIndex) {
       msg.thinking.startedAt = Date.now()
       msg.thinking.elapsedMs = 0
       msg.loading = true
+      typewriterMsg = msg
       break
     case 'thinking_delta':
       msg.thinking.status = 'in_progress'
@@ -590,52 +775,45 @@ function handleAgentEvent(raw, aiIndex) {
         if (/工具 .+ 完成了它的任务/.test(readable) || /\\"title\\"/.test(readable)) {
           break
         }
-        msg.thinking.text = msg.thinking.text
-          ? `${msg.thinking.text}\n\n${readable}`
-          : readable
+        enqueueThinkingText(msg, readable, '\n\n')
       }
       break
     case 'tool_done':
       msg.thinking.status = 'in_progress'
       msg.thinking.collapsed = false
       if (event.text) {
-        const line = `✓ ${event.text}`
-        msg.thinking.text = msg.thinking.text
-          ? `${msg.thinking.text}\n${line}`
-          : line
+        enqueueThinkingText(msg, `✓ ${event.text}`, '\n')
       }
       break
     case 'thinking_done':
-      msg.thinking.status = 'done'
       if (typeof event.elapsedMs === 'number') {
         msg.thinking.elapsedMs = event.elapsedMs
       } else if (msg.thinking.startedAt) {
         msg.thinking.elapsedMs = Date.now() - msg.thinking.startedAt
       }
-      if (event.text && !msg.thinking.text) {
-        msg.thinking.text = String(event.text)
-          .split(/\n\n+/)
-          .map((part) => formatThinkingText(part))
-          .join('\n\n')
+      if (event.text && !msg.thinking.text && !hasThinkingPending()) {
+        enqueueThinkingText(
+          msg,
+          String(event.text)
+            .split(/\n\n+/)
+            .map((part) => formatThinkingText(part))
+            .join('\n\n'),
+          '',
+        )
       }
-      msg.thinking.collapsed = true
+      requestThinkingFinish(msg)
       break
     case 'answer_done':
-      msg.answer.status = 'done'
-      msg.answer.text = formatAnswerText(event.text || '')
-      msg.content = msg.answer.text
-      msg.loading = false
+      startAnswerTypewriter(msg, formatAnswerText(event.text || ''))
       break
     case 'error':
+      stopAnswerTypewriter(msg, { flush: true })
       msg.answer.status = 'done'
       msg.answer.text = event.text || '发生错误'
+      msg.answer.fullText = msg.answer.text
       msg.content = msg.answer.text
-      if (msg.thinking.status === 'in_progress') {
-        msg.thinking.status = 'done'
-        msg.thinking.collapsed = true
-        if (msg.thinking.startedAt) {
-          msg.thinking.elapsedMs = Date.now() - msg.thinking.startedAt
-        }
+      if (msg.thinking.status === 'in_progress' || thinkingFinishRequested) {
+        applyThinkingFinished(msg)
       }
       msg.loading = false
       break
@@ -647,16 +825,16 @@ function handleAgentEvent(raw, aiIndex) {
 function markStopped() {
   const last = messages.value[messages.value.length - 1]
   if (last?.role === 'ai') {
-    if (last.thinking?.status === 'in_progress') {
-      last.thinking.status = 'done'
-      last.thinking.collapsed = true
-      if (!last.thinking.text) {
-        last.thinking.text = '已停止生成'
-      }
+    stopAnswerTypewriter(last, { flush: true })
+    if (last.thinking?.status === 'in_progress' || thinkingFinishRequested) {
+      applyThinkingFinished(last)
     }
-    if (last.loading && !last.content && !last.answer?.text) {
+    if (!last.thinking?.text && last.thinking) {
+      last.thinking.text = '已停止生成'
+    }
+    if (!last.content && !last.answer?.text) {
       last.content = '已停止生成'
-      last.answer = { status: 'done', text: '已停止生成' }
+      last.answer = { status: 'done', text: '已停止生成', fullText: '已停止生成' }
     } else if (last.answer?.text && !last.answer.text.includes('已停止生成')) {
       last.answer.text += '\n\n[已停止生成]'
       last.content = last.answer.text
@@ -664,11 +842,24 @@ function markStopped() {
       last.content += '\n\n[已停止生成]'
     }
     last.loading = false
+    isLoading.value = false
   }
 }
 
 function finishLoadingState() {
   const last = messages.value[messages.value.length - 1]
+  // SSE 已结束但仍在打字（思考或结论）：保持 loading，等打字机收尾
+  if (
+    last?.role === 'ai' &&
+    (last.answer?.status === 'streaming' ||
+      hasThinkingPending() ||
+      pendingAnswerFullText != null ||
+      thinkingFinishRequested)
+  ) {
+    abortController = null
+    stopping = false
+    return
+  }
   if (last?.role === 'ai' && last.loading) {
     const hasContent =
       last.content || last.answer?.text || last.thinking?.text
@@ -677,8 +868,7 @@ function finishLoadingState() {
     } else {
       last.loading = false
       if (last.thinking?.status === 'in_progress') {
-        last.thinking.status = 'done'
-        last.thinking.collapsed = true
+        applyThinkingFinished(last)
       }
     }
   }
@@ -748,6 +938,7 @@ async function sendMessage(overrideText) {
   const text = (typeof overrideText === 'string' ? overrideText : inputText.value).trim()
   if (!text || isLoading.value) return
 
+  resetTypewriterState()
   lastUserMessage = text
   messages.value.push({ role: 'user', content: text })
   if (typeof overrideText !== 'string') {
@@ -808,6 +999,10 @@ async function sendMessage(overrideText) {
     }
   }
 }
+
+onUnmounted(() => {
+  resetTypewriterState()
+})
 </script>
 
 <style scoped>
