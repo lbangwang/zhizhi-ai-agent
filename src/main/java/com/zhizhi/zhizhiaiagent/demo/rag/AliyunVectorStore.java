@@ -21,9 +21,9 @@ public class AliyunVectorStore {
     private String dashScopeApiKey;
     public DashScopeCloudStore getInstance(){
         DashScopeApi dashScopeApi = new DashScopeApi(dashScopeApiKey);
-        DashScopeStoreOptions dashScopeStoreOptions = new DashScopeStoreOptions("AI面试官小助手CC");
+        DashScopeStoreOptions dashScopeStoreOptions = new DashScopeStoreOptions("AI开发面试小助手");
         DashScopeCloudStore dashScopeCloudStore = new DashScopeCloudStore(dashScopeApi,dashScopeStoreOptions);
-        List<Document> documents = dashScopeCloudStore.similaritySearch("如何追到喜欢的人");
+        List<Document> documents = dashScopeCloudStore.similaritySearch("帮忙说一下MCP");
         log.info("查询结果：{}",documents);
         return dashScopeCloudStore;
     }

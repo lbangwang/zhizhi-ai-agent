@@ -21,7 +21,7 @@ class MyMultiQueryExpanderTest {
     @Test
     void multiQueryExpander() {
         ChatClient.Builder chatClientBuilder = ChatClient.builder(dashscopeChatModel)
-                .defaultSystem("您好 我是恋爱专家小李")
+                .defaultSystem("您好 我是面试官小助手小C" )
                 //添加自定义advisor日志打印
                 .defaultAdvisors(new MyLogAdvisor());
         myMultiQueryExpander.multiQueryExpander(chatClientBuilder);

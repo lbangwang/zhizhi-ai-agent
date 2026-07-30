@@ -5,6 +5,7 @@ import com.zhizhi.zhizhiaiagent.advisor.MyLogAdvisor;
 import com.zhizhi.zhizhiaiagent.advisor.ReReadingAdvisor;
 import com.zhizhi.zhizhiaiagent.chatMemory.FileBasedChatMemory;
 import com.zhizhi.zhizhiaiagent.config.ChatModelRouter;
+import com.zhizhi.zhizhiaiagent.demo.rag.MyQueryTransformer;
 import com.zhizhi.zhizhiaiagent.model.ChatModelType;
 import com.zhizhi.zhizhiaiagent.rag.LoveAppContextualQueryAugmenterFactory;
 import com.zhizhi.zhizhiaiagent.rag.LoveAppRagCustomAdvisorFactory;
@@ -27,6 +28,7 @@ import org.springframework.ai.chat.prompt.PromptTemplate;
 import org.springframework.ai.chat.prompt.SystemPromptTemplate;
 import org.springframework.ai.converter.FormatProvider;
 import org.springframework.ai.mcp.SyncMcpToolCallbackProvider;
+import org.springframework.ai.rag.Query;
 import org.springframework.ai.rag.retrieval.search.DocumentRetriever;
 import org.springframework.ai.rag.retrieval.search.VectorStoreDocumentRetriever;
 import org.springframework.ai.tool.ToolCallback;
@@ -199,6 +201,11 @@ public class LoveApp {
     // 和 Spring AI 的工具进行整合
     @Autowired
     private SyncMcpToolCallbackProvider syncMcpToolCallbackProvider;
+
+    @Autowired
+    private MyQueryTransformer myQueryTransformer;
+
+
 
 
     public String doChatWithMcpTest(String message, String chatId) {

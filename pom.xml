@@ -47,7 +47,15 @@
             <version>4.4.0</version>
         </dependency>
 
-    <!--  引入灵积sdk-->
+<!--        接入本地部署模型-->
+        <dependency>
+            <groupId>org.springframework.ai</groupId>
+            <artifactId>spring-ai-ollama-spring-boot-starter</artifactId>
+            <version>1.0.0-M6</version>
+        </dependency>
+
+
+        <!--  引入灵积sdk-->
         <!-- Source: https://mvnrepository.com/artifact/com.alibaba/dashscope-sdk-java -->
         <dependency>
             <groupId>com.alibaba</groupId>

@@ -1,7 +1,6 @@
 package com.zhizhi.zhizhiaiagent.demo.invoke;
 
 
-
 import jakarta.annotation.Resource;
 import org.springframework.ai.chat.messages.AssistantMessage;
 import org.springframework.ai.chat.model.ChatModel;
@@ -10,16 +9,16 @@ import org.springframework.boot.CommandLineRunner;
 import org.springframework.stereotype.Component;
 
 @Component
-public class SpringAiInvoke implements CommandLineRunner {
+public class OllamaAiInvoke implements CommandLineRunner {
 
     @Resource
-    private ChatModel dashscopeChatModel;
+    private ChatModel ollamaChatModel;
 
     @Override
     public void run(String... args) throws Exception {
-//        AssistantMessage output = dashscopeChatModel.call(new Prompt("你好，我是zz"))
-//                .getResult()
-//                .getOutput();
-//        System.out.println(output.getText());
+        AssistantMessage output = ollamaChatModel.call(new Prompt("你好，我是ollama本地部署的千问"))
+                .getResult()
+                .getOutput();
+        System.out.println(output.getText());
     }
 }

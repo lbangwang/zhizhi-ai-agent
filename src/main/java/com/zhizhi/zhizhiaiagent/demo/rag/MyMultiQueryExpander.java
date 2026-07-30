@@ -20,7 +20,7 @@ public class MyMultiQueryExpander {
                 .chatClientBuilder(chatClientBuilder)
                 .numberOfQueries(3)
                 .build();
-        List<Query> queries = queryExpander.expand(new Query("恋爱是什么？它是啥感觉？"));
+        List<Query> queries = queryExpander.expand(new Query("LangChain是啥？"));
 
         log.info("queries: {}",queries);
         return queries;

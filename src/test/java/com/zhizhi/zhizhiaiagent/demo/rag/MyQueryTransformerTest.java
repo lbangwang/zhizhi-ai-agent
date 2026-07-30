@@ -27,32 +27,32 @@ class MyQueryTransformerTest {
     @Test
     void rewriteQueryTransformer() {
         ChatClient.Builder chatClientBuilder = ChatClient.builder(dashscopeChatModel)
-                .defaultSystem("您好 我是恋爱专家小李")
+                .defaultSystem("您好 我是面试官小助手小C李")
                 //添加自定义advisor日志打印
                 .defaultAdvisors(new MyLogAdvisor());
-        Query query = Query.builder().text("我和女朋友吵架了，怎么办？wwhhh啊啊啊啊").build();
+        Query query = Query.builder().text("我想学习AI相关技术如何开始呢？吴哈哈哈哈等等").build();
         myQueryTransformer.rewriteQueryTransformer(query,chatClientBuilder);
     }
 
     @Test
     void translationQueryTransformer() {
         ChatClient.Builder chatClientBuilder = ChatClient.builder(dashscopeChatModel)
-                .defaultSystem("您好 我是恋爱专家小李")
+                .defaultSystem("您好 我是面试官小助手小C李")
                 //添加自定义advisor日志打印
                 .defaultAdvisors(new MyLogAdvisor());
-        Query query = Query.builder().text("我和女朋友吵架了，怎么办").build();
+        Query query = Query.builder().text("我想学习AI相关技术如何开始呢").build();
         myQueryTransformer.translationQueryTransformer(query,chatClientBuilder);
     }
 
     @Test
     void compressionQueryTransformer() {
         ChatClient.Builder chatClientBuilder = ChatClient.builder(dashscopeChatModel)
-                .defaultSystem("您好 我是恋爱专家小李")
+                .defaultSystem("您好 我是面试官小助手小C李")
                 //添加自定义advisor日志打印
                 .defaultAdvisors(new MyLogAdvisor());
-        Query query = Query.builder().text("我和女朋友吵架了，怎么办？wwhhh啊啊啊啊").
-                history(new UserMessage("关系不亲密怎么办"),
-                        new AssistantMessage("恋爱问题怎么办")).build();
+        Query query = Query.builder().text("我想学习AI相关技术如何开始呢？wwhhh啊啊啊啊").
+                history(new UserMessage("学习MCP怎么开始？"),
+                        new AssistantMessage("学习functionCall怎么开始？")).build();
         myQueryTransformer.compressionQueryTransformer(query,chatClientBuilder);
     }
 }
