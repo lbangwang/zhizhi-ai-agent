@@ -4,6 +4,7 @@ import com.zhizhi.zhizhiaiagent.agent.model.ZhizhiManus;
 import com.zhizhi.zhizhiaiagent.agent.model.enums.AgentType;
 import com.zhizhi.zhizhiaiagent.app.LoveApp;
 import com.zhizhi.zhizhiaiagent.config.ChatModelRouter;
+import com.zhizhi.zhizhiaiagent.demo.rag.MyQueryTransformer;
 import jakarta.annotation.Resource;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.ai.chat.model.ChatModel;
@@ -34,6 +35,9 @@ public class AIController {
 
     @Resource
     private ChatModelRouter chatModelRouter;
+
+    @Autowired
+    private MyQueryTransformer myQueryTransformer;
 
     @GetMapping("/doChatBySyn")
     public String doChatBySyn(String message, String chatId,
@@ -75,10 +79,12 @@ public class AIController {
                                           @RequestParam(defaultValue = "qwen") String model) {
         try {
             ChatModel chatModel = chatModelRouter.resolve(model);
+            // 提示词增强：重写用户问题后再交给超级智能体
+            String enhancedMessage = myQueryTransformer.rewriteUserMessage(message, chatModel);
             ZhizhiManus zhizhiManus = new ZhizhiManus(toolCallbacks, chatModel,
                     chatModelRouter.resolveChatOptions(model));
             log.info("ZhizhiManus using model={}", model);
-            return zhizhiManus.runStream(message);
+            return zhizhiManus.runStream(enhancedMessage);
         } catch (Exception e) {
             log.error("ZhizhiManus start failed, model={}", model, e);
             SseEmitter sseEmitter = new SseEmitter(300000L);

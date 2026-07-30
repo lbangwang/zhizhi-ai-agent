@@ -263,6 +263,17 @@ public class LoveApp {
 
         log.info("Session {} using model={}", chatId, model);
 
+        // 实际场景中，比如VIP用户才使用增强提示词，提示词增强：重写用户问题后再送入对话 / RAG
+        String enhancedMessage;
+        try {
+            enhancedMessage = myQueryTransformer.rewriteUserMessage(
+                    message, chatModelRouter.resolve(model));
+        } catch (Exception e) {
+            log.warn("Session {} query rewrite skipped, use original message", chatId, e);
+            enhancedMessage = message;
+        }
+        log.info("doChatByStream.enhanced.message: {}",  enhancedMessage);
+
         //添加对于的会话状态，如果不存在则创建一个新的AtomicBoolean对象
         AtomicBoolean state = sessionStates.computeIfAbsent(chatId,
                 k -> new AtomicBoolean(true));
@@ -271,7 +282,7 @@ public class LoveApp {
 
         ChatClient.ChatClientRequestSpec promptSpec = selectedClient
                 .prompt()
-                .user(message)
+                .user(enhancedMessage)
                 .advisors(spec -> spec.param(CHAT_MEMORY_CONVERSATION_ID_KEY, chatId)
                         .param(CHAT_MEMORY_RETRIEVE_SIZE_KEY, 10))
                 // 开启日志，便于观察效果
