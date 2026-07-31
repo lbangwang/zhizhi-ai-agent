@@ -31,3 +31,13 @@ build/
 
 ### VS Code ###
 .vscode/
+
+### Local / secrets ###
+.DS_Store
+.env
+.env.local
+.env.*.local
+*.pem
+### Runtime data ###
+tmp/
+tmpfile/

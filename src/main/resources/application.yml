@@ -1,0 +1,101 @@
+spring:
+  application:
+    name: zhizhi-ai-agent
+  # D2: MySQL 连接占位。本地装好 MySQL 后在 .env 填写，并设置 MYSQL_ENABLED=true
+  datasource:
+    url: ${MYSQL_URL:jdbc:mysql://127.0.0.1:3306/zhizhi_ai_agent?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai&useSSL=false&allowPublicKeyRetrieval=true}
+    username: ${MYSQL_USERNAME:root}
+    password: ${MYSQL_PASSWORD:}
+    driver-class-name: com.mysql.cj.jdbc.Driver
+  ai:
+    alibaba:
+      chat:
+        options:
+          timeout: 60000  # 设置为60秒
+    dashscope:
+      # 通过环境变量注入，勿把真实 key 写入仓库
+      api-key: ${DASHSCOPE_API_KEY:}
+      chat:
+        options:
+          model: qwen-plus
+    openai:
+      api-key: ${DEEPSEEK_API_KEY:}
+      base-url: ${DEEPSEEK_BASE_URL:https://api.deepseek.com}
+      chat:
+        options:
+          model: ${DEEPSEEK_MODEL:deepseek-v4-flash}
+      embedding:
+        enabled: false          # DeepSeek 不支持 embedding，必须关
+
+    # 豆包（火山方舟 OpenAI 兼容）
+    # base-url 只需到 /api/v3，不要带 /chat/completions（SDK 会自动拼接路径）
+    doubao:
+      api-key: ${DOUBAO_API_KEY:}
+      base-url: ${DOUBAO_BASE_URL:https://ark.cn-beijing.volces.com/api/v3}
+      chat:
+        options:
+          model: ${DOUBAO_MODEL:doubao-seed-2-1-turbo-260628}
+        # 方舟兼容接口路径是 /chat/completions，不是 OpenAI 默认的 /v1/chat/completions
+        completions-path: /chat/completions
+    ollama:
+      base-url: ${OLLAMA_BASE_URL:http://localhost:11434}
+      chat:
+        model: ${OLLAMA_MODEL:qwen3.5:0.8b}
+
+
+#    远程部署暂时注释
+#    mcp:
+#      client:
+#        sse:
+#          connections:
+#            server1:
+#              url: http://localhost:8127
+##        stdio:
+#          servers-configuration: classpath:mcp-servers.json
+server:
+  port: ${SERVER_PORT:8123}
+  servlet:
+    context-path: /api
+# springdoc-openapi
+springdoc:
+  swagger-ui:
+    path: /swagger-ui.html
+    tags-sorter: alpha
+    operations-sorter: alpha
+  api-docs:
+    path: /v3/api-docs
+  group-configs:
+    - group: 'default'
+      paths-to-match: '/**'
+      packages-to-scan: com.zhizhi.zhizhiaiagent
+# knife4j
+knife4j:
+  enable: true
+  setting:
+    language: zh_cn
+
+#日志打印
+logging:
+  level:
+    org.springframework.ai.chat.client.advisor.SimpleLoggerAdvisor: debug
+
+
+
+search-api:
+  api-key: ${SEARCH_API_KEY:}
+
+
+# MyBatis-Plus（仅在 MYSQL_ENABLED=true 时实际生效）
+mybatis-plus:
+  configuration:
+    map-underscore-to-camel-case: true
+    log-impl: org.apache.ibatis.logging.slf4j.Slf4jImpl
+  global-config:
+    db-config:
+      id-type: auto
+      table-underline: true
+
+# 数据源开关：false 时不连接 MySQL，应用可正常启动（D2 先预留，本地 MySQL 就绪后再开）
+app:
+  datasource:
+    enabled: ${MYSQL_ENABLED:false}

@@ -34,13 +34,13 @@ public class ChatModelRouter {
             case QWEN -> dashscopeChatModel;
             case DEEPSEEK -> {
                 if (deepSeekChatModel == null) {
-                    throw new IllegalStateException("DeepSeek 模型未配置，请在 application.yml 设置 spring.ai.openai.api-key");
+                    throw new IllegalStateException("DeepSeek 模型未配置，请设置环境变量 DEEPSEEK_API_KEY");
                 }
                 yield deepSeekChatModel;
             }
             case DOUBAO -> {
                 if (doubaoChatModel == null) {
-                    throw new IllegalStateException("豆包模型未配置，请在 application.yml 设置 spring.ai.doubao.api-key");
+                    throw new IllegalStateException("豆包模型未配置，请设置环境变量 DOUBAO_API_KEY");
                 }
                 yield doubaoChatModel;
             }
