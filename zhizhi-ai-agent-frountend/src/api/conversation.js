@@ -23,9 +23,16 @@ export async function createConversation(payload) {
   return unwrap(await request.post('/conversations', payload))
 }
 
-/** 按 chatId 查询会话 */
+/** 按 chatId 查询会话；不存在时返回 null（HTTP 仍为 200，靠 code 判断） */
 export async function getConversation(chatId) {
-  return unwrap(await request.get(`/conversations/${encodeURIComponent(chatId)}`))
+  const body = (await request.get(`/conversations/${encodeURIComponent(chatId)}`))?.data
+  if (!body || typeof body !== 'object') {
+    throw new Error('接口返回异常')
+  }
+  if (body.code !== 0) {
+    return null
+  }
+  return body.data
 }
 
 /** 更新会话 */
@@ -58,14 +65,12 @@ export async function listMessages(chatId) {
  * 确保会话存在：已存在则返回，否则创建。
  */
 export async function ensureConversation({ chatId, agentType, title, model }) {
-  try {
-    return await getConversation(chatId)
-  } catch {
-    return createConversation({
-      chatId,
-      agentType,
-      title: title || '新对话',
-      model,
-    })
-  }
+  const existing = await getConversation(chatId)
+  if (existing) return existing
+  return createConversation({
+    chatId,
+    agentType,
+    title: title || '新对话',
+    model,
+  })
 }

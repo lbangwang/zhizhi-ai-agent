@@ -48,7 +48,13 @@ public class ConversationController {
     @Operation(summary = "按 chatId 查询会话")
     @GetMapping("/{chatId}")
     public ApiResult<ConversationResponse> get(@PathVariable String chatId) {
-        return ApiResult.ok(conversationService.getByChatId(chatId, StpUtil.getLoginIdAsString()));
+        ConversationResponse conversation = conversationService.findOwnedByChatId(
+                chatId, StpUtil.getLoginIdAsString());
+        if (conversation == null) {
+            // HTTP 200 + 业务失败码，前端用 code/message 分支，避免接口报红
+            return ApiResult.fail("会话不存在");
+        }
+        return ApiResult.ok(conversation);
     }
 
     @Operation(summary = "更新会话标题/状态")

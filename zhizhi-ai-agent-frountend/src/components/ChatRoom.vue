@@ -8,7 +8,7 @@
       <aside class="history-sidebar" :class="{ open: sidebarOpen }">
         <div class="sidebar-top">
           <span class="sidebar-title">历史会话</span>
-          <button class="new-chat-btn" type="button" :disabled="isLoading" @click="startNewChat">
+          <button class="new-chat-btn" type="button" @click="startNewChat">
             新对话
           </button>
         </div>
@@ -519,13 +519,52 @@ async function selectConversation(nextChatId) {
 }
 
 async function startNewChat() {
-  if (isLoading.value) return
-  if (abortController) abortController.abort()
+  // 允许随时开新会话：打断进行中的生成，避免按钮因 isLoading 一直无响应
+  if (abortController) {
+    abortController.abort()
+    abortController = null
+  }
+  stopping = false
+  isLoading.value = false
   resetTypewriterState()
+
+  const current = conversations.value.find((c) => c.chatId === chatId.value)
+  const alreadyFresh =
+    messages.value.length === 0 &&
+    (!current || !current.title || current.title === '新对话')
+
+  // 已在空白「新对话」上：只聚焦输入框，避免连点刷出一堆空会话
+  if (alreadyFresh && current) {
+    await nextTick()
+    inputRef.value?.focus()
+    if (typeof window !== 'undefined' && window.innerWidth < 960) {
+      sidebarOpen.value = false
+    }
+    return
+  }
+
   chatId.value = generateChatId()
   conversationReady.value = false
   messages.value = []
   inputText.value = ''
+
+  if (props.enableHistory) {
+    try {
+      await ensureConversation({
+        chatId: chatId.value,
+        agentType: props.agentType,
+        title: '新对话',
+        model: selectedModel.value,
+      })
+      conversationReady.value = true
+      await refreshConversations()
+    } catch (err) {
+      historyError.value = err.message || '创建会话失败'
+    }
+  }
+
+  await nextTick()
+  inputRef.value?.focus()
   if (typeof window !== 'undefined' && window.innerWidth < 960) {
     sidebarOpen.value = false
   }
@@ -2223,11 +2262,18 @@ onUnmounted(() => {
   padding: 4px 10px;
   font-size: 12px;
   cursor: pointer;
+  transition:
+    background 0.15s,
+    color 0.15s;
 }
 
-.new-chat-btn:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
+.new-chat-btn:hover {
+  background: var(--accent);
+  color: #fff;
+}
+
+.new-chat-btn:active {
+  transform: scale(0.97);
 }
 
 .sidebar-hint {

@@ -85,6 +85,20 @@ public class ConversationService {
         return ConversationResponse.from(requireOwned(chatId, ownerUserId));
     }
 
+    /**
+     * 按 chatId 查询当前用户会话；不存在或无权时返回 null（由接口层用业务 code 表达，避免 接口 刷红）。
+     */
+    @Transactional(readOnly = true)
+    public ConversationResponse findOwnedByChatId(String chatId, String ownerUserId) {
+        ConversationEntity entity = conversationMapper.selectOne(new LambdaQueryWrapper<ConversationEntity>()
+                .eq(ConversationEntity::getChatId, chatId)
+                .last("LIMIT 1"));
+        if (entity == null || !Objects.equals(ownerUserId, entity.getUserId())) {
+            return null;
+        }
+        return ConversationResponse.from(entity);
+    }
+
     @Transactional
     public ConversationResponse update(String chatId, String ownerUserId, UpdateConversationRequest request) {
         ConversationEntity entity = requireOwned(chatId, ownerUserId);

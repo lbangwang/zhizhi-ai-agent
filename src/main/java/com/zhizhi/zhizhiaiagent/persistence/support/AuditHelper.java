@@ -1,10 +1,8 @@
 package com.zhizhi.zhizhiaiagent.persistence.support;
 
-import com.alibaba.nacos.common.utils.UuidUtils;
+
 import com.zhizhi.zhizhiaiagent.persistence.entity.BaseEntity;
 import org.springframework.util.StringUtils;
-
-import java.time.LocalDateTime;
 import java.util.Date;
 
 /**
@@ -13,7 +11,7 @@ import java.util.Date;
 public final class AuditHelper {
 
     public static final String SYSTEM_USER = "system";
-    public static final String ENTERPRISE_ID = UuidUtils.generateUuid();
+    public static final String ENTERPRISE_ID = IdGenerator.nextId();
 
     private AuditHelper() {
     }
@@ -26,7 +24,7 @@ public final class AuditHelper {
         entity.setUpdateDate(now);
         entity.setUpdateBy(by);
         entity.setIsDel(0);
-        entity.setEnterpriseId(ENTERPRISE_ID);
+        entity.setEnterpriseId(org.apache.commons.lang3.StringUtils.isBlank(enterpriseId) ? ENTERPRISE_ID : enterpriseId);
     }
 
     public static void fillOnUpdate(BaseEntity entity, String operator) {
