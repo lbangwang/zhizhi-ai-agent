@@ -4,15 +4,70 @@
     <div class="orb orb-a" aria-hidden="true" />
     <div class="orb orb-b" aria-hidden="true" />
 
-    <div class="chat-room">
+    <div class="chat-layout">
+      <aside class="history-sidebar" :class="{ open: sidebarOpen }">
+        <div class="sidebar-top">
+          <span class="sidebar-title">历史会话</span>
+          <button class="new-chat-btn" type="button" :disabled="isLoading" @click="startNewChat">
+            新对话
+          </button>
+        </div>
+        <p v-if="historyError" class="sidebar-hint sidebar-error">{{ historyError }}</p>
+        <p v-else-if="historyLoading" class="sidebar-hint">加载中…</p>
+        <p v-else-if="conversations.length === 0" class="sidebar-hint">暂无历史，发一条消息开始吧</p>
+        <ul v-else class="conversation-list">
+          <li
+            v-for="item in conversations"
+            :key="item.chatId"
+            :class="['conversation-item', { active: item.chatId === chatId }]"
+          >
+            <button
+              type="button"
+              class="conversation-main"
+              :disabled="isLoading"
+              @click="selectConversation(item.chatId)"
+            >
+              <span class="conversation-name">{{ item.title || '未命名会话' }}</span>
+              <span class="conversation-time">{{ formatTime(item.updateDate) }}</span>
+            </button>
+            <button
+              type="button"
+              class="conversation-delete"
+              title="删除"
+              :disabled="isLoading"
+              @click.stop="removeConversation(item.chatId)"
+            >
+              ×
+            </button>
+          </li>
+        </ul>
+      </aside>
+
+      <button
+        v-if="sidebarOpen"
+        class="sidebar-backdrop"
+        type="button"
+        aria-label="关闭历史"
+        @click="sidebarOpen = false"
+      />
+
+      <div class="chat-room">
       <header class="chat-header">
         <button class="back-btn" type="button" @click="$router.push('/')">返回</button>
+        <button
+          class="history-toggle"
+          type="button"
+          :aria-pressed="sidebarOpen"
+          @click="sidebarOpen = !sidebarOpen"
+        >
+          历史
+        </button>
         <div class="header-info">
           <div class="title-row">
             <img class="app-mark" :src="aiAvatar" :alt="`${title}头像`" />
             <h1>{{ title }}</h1>
           </div>
-          <span v-if="chatId" class="chat-id">会话 {{ chatId }}</span>
+          <span v-if="chatId" class="chat-id">会话 {{ shortId(chatId) }}</span>
         </div>
       </header>
 
@@ -230,18 +285,28 @@
         <p class="ai-disclaimer">内容由AI生成，请仔细斟酌</p>
       </div>
     </div>
+    </div>
     <SiteFooter compact />
   </div>
 </template>
 
 <script setup>
-import { computed, ref, nextTick, watch, onUnmounted } from 'vue'
+import { computed, ref, nextTick, watch, onMounted, onUnmounted } from 'vue'
 import { marked } from 'marked'
 import DOMPurify from 'dompurify'
 import { fetchSSE } from '../api/sse.js'
 import { resolveApiUrl } from '../api/config.js'
+import {
+  addMessage,
+  deleteConversation,
+  ensureConversation,
+  listConversations,
+  listMessages,
+  updateConversation,
+} from '../api/conversation.js'
 import { APP_AVATARS } from '../constants/apps.js'
 import { DEFAULT_MODEL, MODEL_OPTIONS } from '../constants/models.js'
+import { generateChatId } from '../utils/chatId.js'
 import SiteFooter from './SiteFooter.vue'
 import ParticleBackground from './ParticleBackground.vue'
 
@@ -291,9 +356,20 @@ const props = defineProps({
     type: String,
     required: true,
   },
-  chatId: {
+  /** 可选初始 chatId；不传则组件内生成 32 位 ID */
+  initialChatId: {
     type: String,
     default: '',
+  },
+  /** LOVE_MASTER | SUPER_AGENT，用于历史侧栏过滤与建会话 */
+  agentType: {
+    type: String,
+    required: true,
+  },
+  /** 是否启用历史侧栏与消息落库（需 MYSQL_ENABLED=true） */
+  enableHistory: {
+    type: Boolean,
+    default: true,
   },
   emptyTip: {
     type: String,
@@ -353,10 +429,177 @@ const editingIndex = ref(-1)
 const editText = ref('')
 const modelOptions = MODEL_OPTIONS
 const selectedModel = ref(props.defaultModel || DEFAULT_MODEL)
+const chatId = ref(props.initialChatId || generateChatId())
+const conversations = ref([])
+const historyLoading = ref(false)
+const historyError = ref('')
+const sidebarOpen = ref(typeof window !== 'undefined' ? window.innerWidth >= 960 : true)
+const conversationReady = ref(false)
 let abortController = null
 let lastUserMessage = ''
 let stopping = false
 let copiedTimer = null
+
+function shortId(id) {
+  if (!id) return ''
+  return id.length > 12 ? `${id.slice(0, 8)}…${id.slice(-4)}` : id
+}
+
+function formatTime(value) {
+  if (!value) return ''
+  const d = new Date(value)
+  if (Number.isNaN(d.getTime())) return ''
+  const mm = String(d.getMonth() + 1).padStart(2, '0')
+  const dd = String(d.getDate()).padStart(2, '0')
+  const hh = String(d.getHours()).padStart(2, '0')
+  const mi = String(d.getMinutes()).padStart(2, '0')
+  return `${mm}-${dd} ${hh}:${mi}`
+}
+
+function titleFromText(text) {
+  const t = (text || '').trim().replace(/\s+/g, ' ')
+  if (!t) return '新对话'
+  return t.length > 24 ? `${t.slice(0, 24)}…` : t
+}
+
+async function refreshConversations() {
+  if (!props.enableHistory) return
+  historyLoading.value = true
+  historyError.value = ''
+  try {
+    const list = await listConversations({ agentType: props.agentType })
+    conversations.value = Array.isArray(list) ? list : []
+  } catch (err) {
+    historyError.value = err.message || '历史加载失败（请确认 MySQL 已启用）'
+    conversations.value = []
+  } finally {
+    historyLoading.value = false
+  }
+}
+
+function mapStoredMessages(rows) {
+  return (rows || []).map((row) => {
+    if (row.role === 'user') {
+      return { role: 'user', content: row.content || '' }
+    }
+    // assistant / system / tool -> AI 气泡
+    if (props.stepMode) {
+      const msg = createAgentMessage()
+      msg.loading = false
+      msg.thinking.status = 'done'
+      msg.thinking.collapsed = true
+      msg.thinking.text = ''
+      msg.answer.status = 'done'
+      msg.answer.text = row.content || ''
+      msg.answer.fullText = row.content || ''
+      msg.content = row.content || ''
+      return msg
+    }
+    return { role: 'ai', content: row.content || '', loading: false }
+  })
+}
+
+async function selectConversation(nextChatId) {
+  if (!nextChatId || nextChatId === chatId.value || isLoading.value) return
+  if (abortController) abortController.abort()
+  resetTypewriterState()
+  chatId.value = nextChatId
+  conversationReady.value = true
+  messages.value = []
+  try {
+    const rows = await listMessages(nextChatId)
+    messages.value = mapStoredMessages(rows)
+  } catch (err) {
+    historyError.value = err.message || '加载消息失败'
+  }
+  if (typeof window !== 'undefined' && window.innerWidth < 960) {
+    sidebarOpen.value = false
+  }
+}
+
+async function startNewChat() {
+  if (isLoading.value) return
+  if (abortController) abortController.abort()
+  resetTypewriterState()
+  chatId.value = generateChatId()
+  conversationReady.value = false
+  messages.value = []
+  inputText.value = ''
+  if (typeof window !== 'undefined' && window.innerWidth < 960) {
+    sidebarOpen.value = false
+  }
+}
+
+async function removeConversation(targetChatId) {
+  if (!targetChatId || isLoading.value) return
+  try {
+    await deleteConversation(targetChatId)
+    if (chatId.value === targetChatId) {
+      await startNewChat()
+    }
+    await refreshConversations()
+  } catch (err) {
+    historyError.value = err.message || '删除失败'
+  }
+}
+
+async function persistUserAndEnsure(text) {
+  if (!props.enableHistory) return
+  try {
+    if (!conversationReady.value) {
+      await ensureConversation({
+        chatId: chatId.value,
+        agentType: props.agentType,
+        title: titleFromText(text),
+        model: selectedModel.value,
+      })
+      conversationReady.value = true
+    }
+    await addMessage(chatId.value, { role: 'user', content: text })
+    await refreshConversations()
+  } catch (err) {
+    console.warn('[history] 保存用户消息失败', err)
+    historyError.value = err.message || '保存失败'
+  }
+}
+
+function extractAiPersistText(aiMsg) {
+  if (!aiMsg) return ''
+  if (aiMsg.answer?.fullText) return aiMsg.answer.fullText
+  if (aiMsg.answer?.text) return aiMsg.answer.text
+  return aiMsg.content || ''
+}
+
+async function persistAssistantReply(aiMsg) {
+  if (!props.enableHistory || !conversationReady.value) return
+  const content = extractAiPersistText(aiMsg).trim()
+  if (!content) return
+  try {
+    const metadata = aiMsg?.thinking?.text
+      ? JSON.stringify({ thinking: aiMsg.thinking.text })
+      : undefined
+    await addMessage(chatId.value, {
+      role: 'assistant',
+      content,
+      metadata,
+    })
+    // 用首条用户问题刷新标题（若仍是默认）
+    const current = conversations.value.find((c) => c.chatId === chatId.value)
+    if (current && (!current.title || current.title === '新对话')) {
+      const firstUser = messages.value.find((m) => m.role === 'user')
+      if (firstUser?.content) {
+        await updateConversation(chatId.value, { title: titleFromText(firstUser.content) })
+      }
+    }
+    await refreshConversations()
+  } catch (err) {
+    console.warn('[history] 保存助手消息失败', err)
+  }
+}
+
+onMounted(() => {
+  refreshConversations()
+})
 
 function scrollToBottom() {
   nextTick(() => {
@@ -498,6 +741,7 @@ function beginAnswerTypewriter(msg, fullText) {
     msg.answer.status = 'done'
     msg.loading = false
     isLoading.value = false
+    persistAssistantReply(msg)
     return
   }
 
@@ -605,6 +849,7 @@ function ensureTypewriterPump() {
       isLoading.value = false
       typewriterTimer = null
       typewriterMsg = null
+      persistAssistantReply(msg)
       return
     }
 
@@ -872,6 +1117,10 @@ function finishLoadingState() {
       }
     }
   }
+  const lastAi = messages.value[messages.value.length - 1]
+  if (lastAi?.role === 'ai') {
+    persistAssistantReply(lastAi)
+  }
   isLoading.value = false
   abortController = null
   stopping = false
@@ -900,7 +1149,7 @@ function notifyStopApi(userQuestion) {
   )
   const params = new URLSearchParams({
     message: question,
-    chatId: props.chatId || '',
+    chatId: chatId.value || '',
     type: props.stopType || 'COMMON',
   })
   const url = `${stopUrl}?${params.toString()}`
@@ -945,6 +1194,8 @@ async function sendMessage(overrideText) {
     inputText.value = ''
   }
 
+  await persistUserAndEnsure(text)
+
   const aiIndex = messages.value.length
   const useAgentUi =
     props.stepMode || String(props.apiUrl || '').includes('ZhizhiManus')
@@ -960,8 +1211,8 @@ async function sendMessage(overrideText) {
     message: text,
     model: selectedModel.value || DEFAULT_MODEL,
   }
-  if (props.chatId) {
-    params.chatId = props.chatId
+  if (chatId.value) {
+    params.chatId = chatId.value
   }
 
   try {
@@ -1918,4 +2169,196 @@ onUnmounted(() => {
     display: none;
   }
 }
+
+/* ===== D3 历史侧栏 ===== */
+.chat-layout {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  width: 100%;
+  max-width: 1100px;
+  height: calc(100dvh - 88px - var(--safe-top) - var(--safe-bottom));
+  max-height: 780px;
+  gap: 0;
+  animation: page-enter 0.45s ease-out;
+}
+
+.history-sidebar {
+  display: flex;
+  flex-direction: column;
+  width: 260px;
+  flex-shrink: 0;
+  background: rgba(255, 255, 255, 0.78);
+  backdrop-filter: blur(16px);
+  border: 1px solid rgba(255, 255, 255, 0.7);
+  border-right: none;
+  border-radius: var(--radius-lg) 0 0 var(--radius-lg);
+  overflow: hidden;
+}
+
+.sidebar-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 12px 12px 10px;
+  border-bottom: 1px solid rgba(15, 28, 46, 0.06);
+}
+
+.sidebar-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--color-ink);
+}
+
+.new-chat-btn {
+  border: 1px solid var(--accent);
+  background: var(--accent-soft);
+  color: var(--accent);
+  border-radius: 999px;
+  padding: 4px 10px;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.new-chat-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.sidebar-hint {
+  margin: 16px 12px;
+  font-size: 12px;
+  color: var(--color-text-muted);
+  line-height: 1.5;
+}
+
+.sidebar-error {
+  color: #b42318;
+}
+
+.conversation-list {
+  list-style: none;
+  margin: 0;
+  padding: 8px;
+  overflow-y: auto;
+  flex: 1;
+}
+
+.conversation-item {
+  display: flex;
+  align-items: stretch;
+  gap: 2px;
+  margin-bottom: 4px;
+  border-radius: 10px;
+}
+
+.conversation-item.active {
+  background: var(--accent-soft);
+}
+
+.conversation-main {
+  flex: 1;
+  min-width: 0;
+  text-align: left;
+  border: none;
+  background: transparent;
+  padding: 8px 10px;
+  cursor: pointer;
+  border-radius: 10px;
+}
+
+.conversation-name {
+  display: block;
+  font-size: 13px;
+  color: var(--color-ink);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.conversation-time {
+  display: block;
+  margin-top: 2px;
+  font-size: 11px;
+  color: var(--color-text-muted);
+}
+
+.conversation-delete {
+  width: 28px;
+  border: none;
+  background: transparent;
+  color: var(--color-text-muted);
+  cursor: pointer;
+  font-size: 16px;
+  border-radius: 8px;
+}
+
+.conversation-delete:hover {
+  color: #b42318;
+  background: rgba(180, 35, 24, 0.08);
+}
+
+.history-toggle {
+  flex-shrink: 0;
+  min-height: 36px;
+  padding: 6px 12px;
+  border: 1px solid var(--color-border);
+  border-radius: 999px;
+  background: var(--color-surface-soft);
+  color: var(--color-text-secondary);
+  cursor: pointer;
+  font-size: 13px;
+}
+
+.sidebar-backdrop {
+  display: none;
+}
+
+.chat-layout .chat-room {
+  max-width: none;
+  flex: 1;
+  height: 100%;
+  max-height: none;
+  border-radius: 0 var(--radius-lg) var(--radius-lg) 0;
+  animation: none;
+}
+
+@media (max-width: 959px) {
+  .history-sidebar {
+    position: absolute;
+    left: 0;
+    top: 0;
+    bottom: 0;
+    z-index: 5;
+    border-radius: var(--radius-lg) 0 0 var(--radius-lg);
+    transform: translateX(-105%);
+    transition: transform 0.22s ease;
+    box-shadow: var(--shadow-card);
+  }
+
+  .history-sidebar.open {
+    transform: translateX(0);
+  }
+
+  .sidebar-backdrop {
+    display: block;
+    position: absolute;
+    inset: 0;
+    z-index: 4;
+    border: none;
+    background: rgba(15, 28, 46, 0.28);
+  }
+
+  .chat-layout .chat-room {
+    border-radius: var(--radius-lg);
+  }
+}
+
+@media (min-width: 960px) {
+  .history-toggle {
+    display: none;
+  }
+}
+
 </style>

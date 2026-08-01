@@ -76,6 +76,7 @@ public class AIController {
 
     @GetMapping(value = "/doChatByZhizhiManus")
     public SseEmitter doChatByZhizhiManus(String message,
+                                          String chatId,
                                           @RequestParam(defaultValue = "qwen") String model) {
         try {
             ChatModel chatModel = chatModelRouter.resolve(model);
@@ -83,7 +84,7 @@ public class AIController {
             String enhancedMessage = myQueryTransformer.rewriteUserMessage(message, chatModel);
             ZhizhiManus zhizhiManus = new ZhizhiManus(toolCallbacks, chatModel,
                     chatModelRouter.resolveChatOptions(model));
-            log.info("ZhizhiManus using model={}", model);
+            log.info("ZhizhiManus using model={}, chatId={}", model, chatId);
             return zhizhiManus.runStream(enhancedMessage);
         } catch (Exception e) {
             log.error("ZhizhiManus start failed, model={}", model, e);

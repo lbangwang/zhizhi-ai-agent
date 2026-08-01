@@ -259,7 +259,8 @@ Swagger：启用 MySQL 后打开 `/api/swagger-ui.html` 可见「用户」「会
 |--------|------|
 | D1 密钥与配置工程化 | ✅ 完成 |
 | D2 用户/会话/消息表 + CRUD（MyBatis-Plus，MySQL 连接预留） | ✅ 完成 |
-| W1 登录 + 前端历史 + 可取消 + Docker | 进行中（D3～D5） |
+| D3 前端历史侧栏 + chatId 打通面试官 & Manus | ✅ 完成 |
+| W1 登录 + 可取消 + Docker | 进行中（D4～D5） |
 | W2 知识库 + 产物 + 工具审计 | 待开始 |
 | W3 Workspace + HITL + MCP + Trace | 待开始 |
 | W4 Demo / 简历包装 | 待开始 |

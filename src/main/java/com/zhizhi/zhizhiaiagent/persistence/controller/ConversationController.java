@@ -40,8 +40,9 @@ public class ConversationController {
 
     @Operation(summary = "会话列表")
     @GetMapping
-    public ApiResult<List<ConversationResponse>> list(@RequestParam(required = false) String userId) {
-        return ApiResult.ok(conversationService.list(userId));
+    public ApiResult<List<ConversationResponse>> list(@RequestParam(required = false) String userId,
+                                                      @RequestParam(required = false) String agentType) {
+        return ApiResult.ok(conversationService.list(userId, agentType));
     }
 
     @Operation(summary = "按 chatId 查询会话")

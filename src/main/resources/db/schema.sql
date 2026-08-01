@@ -58,7 +58,5 @@ CREATE TABLE IF NOT EXISTS message (
     enterprise_id      CHAR(32)     NULL COMMENT '企业/租户ID，32位字符串，无默认值',
     KEY idx_message_conversation_id (conversation_id),
     KEY idx_message_enterprise_id (enterprise_id),
-    KEY idx_message_is_del (is_del),
-    CONSTRAINT fk_message_conversation
-        FOREIGN KEY (conversation_id) REFERENCES conversation (id)
+    KEY idx_message_is_del (is_del)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='消息';

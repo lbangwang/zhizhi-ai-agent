@@ -70,11 +70,14 @@ public class ConversationService {
     }
 
     @Transactional(readOnly = true)
-    public List<ConversationResponse> list(String userId) {
+    public List<ConversationResponse> list(String userId, String agentType) {
         LambdaQueryWrapper<ConversationEntity> wrapper = new LambdaQueryWrapper<ConversationEntity>()
                 .orderByDesc(ConversationEntity::getUpdateDate);
         if (StringUtils.hasText(userId)) {
             wrapper.eq(ConversationEntity::getUserId, userId.trim());
+        }
+        if (StringUtils.hasText(agentType)) {
+            wrapper.eq(ConversationEntity::getAgentType, agentType.trim());
         }
         return conversationMapper.selectList(wrapper).stream()
                 .map(ConversationResponse::from)
