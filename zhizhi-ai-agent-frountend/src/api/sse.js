@@ -1,4 +1,5 @@
 import { resolveApiUrl } from './config.js'
+import { authHeader, clearAuth } from '../utils/auth.js'
 
 /**
  * 通过 SSE 流式请求后端接口
@@ -16,9 +17,17 @@ export async function fetchSSE(url, params, onMessage, signal) {
     method: 'GET',
     headers: {
       Accept: 'text/event-stream',
+      ...authHeader(),
     },
     signal,
   })
+
+  if (response.status === 401) {
+    clearAuth()
+    const redirect = encodeURIComponent(window.location.pathname + window.location.search)
+    window.location.href = `/login?redirect=${redirect}`
+    throw new Error('未登录或登录已过期')
+  }
 
   if (!response.ok) {
     throw new Error(`请求失败: ${response.status} ${response.statusText}`)

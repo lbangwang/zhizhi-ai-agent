@@ -135,7 +135,7 @@ npm run dev
 
 | 功能 | 说明 | 状态 |
 |------|------|------|
-| 用户认证 + 数据隔离 | JWT / Sa-Token，按用户隔离会话 | 待做（W1） |
+| 用户认证 + 数据隔离 | Sa-Token JWT，按用户隔离会话 | **D4 完成** |
 | 会话 / 消息持久化 | MySQL + MyBatis-Plus CRUD；连库开关预留 | **D2 完成（待本地 MySQL）** |
 | 知识库可管理 | 上传、切片、向量检索、引用展示 | 待做（W2） |
 | 工具治理 | 审计日志；危险工具审批 | 待做（W2–W3） |
@@ -253,6 +253,27 @@ MYSQL_PASSWORD=你的密码
 Swagger：启用 MySQL 后打开 `/api/swagger-ui.html` 可见「用户」「会话与消息」分组。
 
 
+
+---
+
+## D4：认证（Sa-Token JWT）
+
+启用 `MYSQL_ENABLED=true` 后生效。
+
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| POST | `/auth/register` | 注册并返回 token |
+| POST | `/auth/login` | 登录返回 token |
+| POST | `/auth/logout` | 退出 |
+| GET | `/auth/me` | 当前用户 |
+
+请求头：`Authorization: Bearer <token>`
+
+白名单：`/auth/login`、`/auth/register`、`/health`、Swagger。其余接口需登录。
+
+前端：`/login` 页；访问面试官 / 超级智能体需先登录。
+
+
 ## 进度追踪
 
 | 里程碑 | 状态 |
@@ -260,7 +281,8 @@ Swagger：启用 MySQL 后打开 `/api/swagger-ui.html` 可见「用户」「会
 | D1 密钥与配置工程化 | ✅ 完成 |
 | D2 用户/会话/消息表 + CRUD（MyBatis-Plus，MySQL 连接预留） | ✅ 完成 |
 | D3 前端历史侧栏 + chatId 打通面试官 & Manus | ✅ 完成 |
-| W1 登录 + 可取消 + Docker | 进行中（D4～D5） |
+| D4 Sa-Token JWT 注册登录与接口鉴权 | ✅ 完成 |
+| W1 可取消 + Docker | 进行中（D5） |
 | W2 知识库 + 产物 + 工具审计 | 待开始 |
 | W3 Workspace + HITL + MCP + Trace | 待开始 |
 | W4 Demo / 简历包装 | 待开始 |

@@ -14,25 +14,20 @@ import com.zhizhi.zhizhiaiagent.persistence.mapper.UserMapper;
 import com.zhizhi.zhizhiaiagent.persistence.support.AuditHelper;
 import com.zhizhi.zhizhiaiagent.persistence.support.IdGenerator;
 import lombok.RequiredArgsConstructor;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 
 import java.util.List;
+import java.util.Objects;
 
 @Service
 @RequiredArgsConstructor
 public class ConversationService {
 
-    @Autowired
-    private  ConversationMapper conversationMapper;
-
-    @Autowired
-    private  MessageMapper messageMapper;
-
-    @Autowired
-    private  UserMapper userMapper;
+    private final ConversationMapper conversationMapper;
+    private final MessageMapper messageMapper;
+    private final UserMapper userMapper;
 
     @Transactional
     public ConversationResponse create(CreateConversationRequest request) {
@@ -44,12 +39,12 @@ public class ConversationService {
         if (exists != null && exists > 0) {
             throw new IllegalArgumentException("chatId 已存在: " + chatId);
         }
-        String userId = null;
-        if (StringUtils.hasText(request.getUserId())) {
-            userId = IdGenerator.requireId(request.getUserId(), "userId");
-            if (userMapper.selectById(userId) == null) {
-                throw new IllegalArgumentException("用户不存在: " + userId);
-            }
+        if (!StringUtils.hasText(request.getUserId())) {
+            throw new IllegalArgumentException("userId 不能为空");
+        }
+        String userId = IdGenerator.requireId(request.getUserId(), "userId");
+        if (userMapper.selectById(userId) == null) {
+            throw new IllegalArgumentException("用户不存在: " + userId);
         }
 
         ConversationEntity entity = new ConversationEntity();
@@ -71,11 +66,12 @@ public class ConversationService {
 
     @Transactional(readOnly = true)
     public List<ConversationResponse> list(String userId, String agentType) {
-        LambdaQueryWrapper<ConversationEntity> wrapper = new LambdaQueryWrapper<ConversationEntity>()
-                .orderByDesc(ConversationEntity::getUpdateDate);
-        if (StringUtils.hasText(userId)) {
-            wrapper.eq(ConversationEntity::getUserId, userId.trim());
+        if (!StringUtils.hasText(userId)) {
+            throw new IllegalArgumentException("userId 不能为空");
         }
+        LambdaQueryWrapper<ConversationEntity> wrapper = new LambdaQueryWrapper<ConversationEntity>()
+                .eq(ConversationEntity::getUserId, userId.trim())
+                .orderByDesc(ConversationEntity::getUpdateDate);
         if (StringUtils.hasText(agentType)) {
             wrapper.eq(ConversationEntity::getAgentType, agentType.trim());
         }
@@ -85,13 +81,13 @@ public class ConversationService {
     }
 
     @Transactional(readOnly = true)
-    public ConversationResponse getByChatId(String chatId) {
-        return ConversationResponse.from(requireByChatId(chatId));
+    public ConversationResponse getByChatId(String chatId, String ownerUserId) {
+        return ConversationResponse.from(requireOwned(chatId, ownerUserId));
     }
 
     @Transactional
-    public ConversationResponse update(String chatId, UpdateConversationRequest request) {
-        ConversationEntity entity = requireByChatId(chatId);
+    public ConversationResponse update(String chatId, String ownerUserId, UpdateConversationRequest request) {
+        ConversationEntity entity = requireOwned(chatId, ownerUserId);
         if (StringUtils.hasText(request.getTitle())) {
             entity.setTitle(request.getTitle().trim());
         }
@@ -101,28 +97,28 @@ public class ConversationService {
         if (request.getStatus() != null) {
             entity.setStatus(request.getStatus());
         }
-        AuditHelper.fillOnUpdate(entity, null);
+        AuditHelper.fillOnUpdate(entity, ownerUserId);
         conversationMapper.updateById(entity);
         return ConversationResponse.from(entity);
     }
 
     @Transactional
-    public void delete(String chatId) {
-        ConversationEntity entity = requireByChatId(chatId);
+    public void delete(String chatId, String ownerUserId) {
+        ConversationEntity entity = requireOwned(chatId, ownerUserId);
         messageMapper.delete(new LambdaQueryWrapper<MessageEntity>()
                 .eq(MessageEntity::getConversationId, entity.getId()));
         conversationMapper.deleteById(entity.getId());
     }
 
     @Transactional
-    public MessageResponse addMessage(String chatId, CreateMessageRequest request) {
+    public MessageResponse addMessage(String chatId, String ownerUserId, CreateMessageRequest request) {
         if (!StringUtils.hasText(request.getRole())) {
             throw new IllegalArgumentException("role 不能为空");
         }
         if (!StringUtils.hasText(request.getContent())) {
             throw new IllegalArgumentException("content 不能为空");
         }
-        ConversationEntity conversation = requireByChatId(chatId);
+        ConversationEntity conversation = requireOwned(chatId, ownerUserId);
 
         MessageEntity message = new MessageEntity();
         message.setId(IdGenerator.nextId());
@@ -133,17 +129,17 @@ public class ConversationService {
         String enterpriseId = StringUtils.hasText(request.getEnterpriseId())
                 ? request.getEnterpriseId()
                 : conversation.getEnterpriseId();
-        AuditHelper.fillOnCreate(message, request.getCreateBy(), enterpriseId);
+        AuditHelper.fillOnCreate(message, ownerUserId, enterpriseId);
         messageMapper.insert(message);
 
-        AuditHelper.fillOnUpdate(conversation, request.getCreateBy());
+        AuditHelper.fillOnUpdate(conversation, ownerUserId);
         conversationMapper.updateById(conversation);
         return MessageResponse.from(message);
     }
 
     @Transactional(readOnly = true)
-    public List<MessageResponse> listMessages(String chatId) {
-        ConversationEntity conversation = requireByChatId(chatId);
+    public List<MessageResponse> listMessages(String chatId, String ownerUserId) {
+        ConversationEntity conversation = requireOwned(chatId, ownerUserId);
         return messageMapper.selectList(new LambdaQueryWrapper<MessageEntity>()
                         .eq(MessageEntity::getConversationId, conversation.getId())
                         .orderByAsc(MessageEntity::getCreateDate))
@@ -152,12 +148,15 @@ public class ConversationService {
                 .toList();
     }
 
-    private ConversationEntity requireByChatId(String chatId) {
+    private ConversationEntity requireOwned(String chatId, String ownerUserId) {
         ConversationEntity entity = conversationMapper.selectOne(new LambdaQueryWrapper<ConversationEntity>()
                 .eq(ConversationEntity::getChatId, chatId)
                 .last("LIMIT 1"));
         if (entity == null) {
             throw new IllegalArgumentException("会话不存在: " + chatId);
+        }
+        if (!Objects.equals(ownerUserId, entity.getUserId())) {
+            throw new IllegalArgumentException("无权访问该会话");
         }
         return entity;
     }

@@ -102,3 +102,16 @@ mybatis-plus:
 app:
   datasource:
     enabled: ${MYSQL_ENABLED:true}
+
+# D4: Sa-Token JWT
+sa-token:
+  token-name: Authorization
+  token-prefix: Bearer
+  timeout: 86400
+  active-timeout: -1
+  is-concurrent: true
+  is-share: false
+  is-read-header: true
+  is-read-cookie: false
+  is-log: false
+  jwt-secret-key: ${SA_TOKEN_JWT_SECRET:zhizhi-ai-agent-dev-jwt-secret-change-me}

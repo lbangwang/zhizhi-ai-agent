@@ -7,6 +7,15 @@
 
     <div class="home-main">
       <div class="home-content">
+        <div class="auth-bar">
+          <template v-if="user">
+            <span class="auth-user">{{ user.nickname || user.username }}</span>
+            <button class="auth-btn" type="button" @click="onLogout">退出</button>
+          </template>
+          <button v-else class="auth-btn primary" type="button" @click="$router.push('/login')">
+            登录 / 注册
+          </button>
+        </div>
         <div class="brand-block">
           <span class="brand-badge">AI Agents Hub</span>
           <p class="brand">{{ brandName }}</p>
@@ -44,13 +53,26 @@
 </template>
 
 <script setup>
+import { ref, onMounted } from 'vue'
 import ParticleBackground from '../components/ParticleBackground.vue'
 import BootTerminal from '../components/BootTerminal.vue'
 import SiteFooter from '../components/SiteFooter.vue'
+import { logout } from '../api/auth.js'
 import { APP_AVATARS, BRAND_NAME } from '../constants/apps.js'
+import { getUser, isLoggedIn } from '../utils/auth.js'
 
 const brandName = BRAND_NAME
 const avatars = APP_AVATARS
+const user = ref(null)
+
+onMounted(() => {
+  user.value = isLoggedIn() ? getUser() : null
+})
+
+async function onLogout() {
+  await logout()
+  user.value = null
+}
 </script>
 
 <style scoped>
@@ -120,6 +142,36 @@ const avatars = APP_AVATARS
   max-width: 900px;
   text-align: center;
   animation: page-enter 0.55s ease-out;
+}
+
+.auth-bar {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+
+.auth-user {
+  font-size: 13px;
+  color: var(--color-text-secondary);
+}
+
+.auth-btn {
+  min-height: 34px;
+  padding: 6px 14px;
+  border-radius: 999px;
+  border: 1px solid var(--color-border);
+  background: rgba(255, 255, 255, 0.7);
+  color: var(--color-text-secondary);
+  cursor: pointer;
+  font-size: 13px;
+}
+
+.auth-btn.primary {
+  border-color: var(--color-primary);
+  background: var(--color-primary);
+  color: #fff;
 }
 
 .brand-block {

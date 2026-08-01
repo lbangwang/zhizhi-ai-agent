@@ -307,6 +307,7 @@ import {
 import { APP_AVATARS } from '../constants/apps.js'
 import { DEFAULT_MODEL, MODEL_OPTIONS } from '../constants/models.js'
 import { generateChatId } from '../utils/chatId.js'
+import { authHeader } from '../utils/auth.js'
 import SiteFooter from './SiteFooter.vue'
 import ParticleBackground from './ParticleBackground.vue'
 
@@ -1158,6 +1159,9 @@ function notifyStopApi(userQuestion) {
     method: 'GET',
     cache: 'no-store',
     keepalive: true,
+    headers: {
+      ...authHeader(),
+    },
   }).catch((err) => {
     console.warn('[stop] 调用停止接口失败', err)
   })
