@@ -8,4 +8,7 @@ public class CreateMessageRequest {
     private String role;
     private String content;
     private String metadata;
+    /** 32 位字符串，不传则继承会话的 enterpriseId */
+    private String enterpriseId;
+    private String createBy;
 }

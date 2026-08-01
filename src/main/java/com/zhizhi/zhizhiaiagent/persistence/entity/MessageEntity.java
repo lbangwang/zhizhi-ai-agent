@@ -4,17 +4,17 @@ import com.baomidou.mybatisplus.annotation.IdType;
 import com.baomidou.mybatisplus.annotation.TableId;
 import com.baomidou.mybatisplus.annotation.TableName;
 import lombok.Data;
-
-import java.time.LocalDateTime;
+import lombok.EqualsAndHashCode;
 
 @Data
+@EqualsAndHashCode(callSuper = true)
 @TableName("message")
-public class MessageEntity {
+public class MessageEntity extends BaseEntity {
 
-    @TableId(type = IdType.AUTO)
-    private Long id;
+    @TableId(type = IdType.INPUT)
+    private String id;
 
-    private Long conversationId;
+    private String conversationId;
 
     /** user / assistant / system / tool */
     private String role;
@@ -23,6 +23,4 @@ public class MessageEntity {
 
     /** 扩展信息：思考链、工具调用摘要等（JSON 字符串） */
     private String metadata;
-
-    private LocalDateTime createdAt;
 }

@@ -38,7 +38,7 @@ public class ConversationController {
 
     @Operation(summary = "会话列表")
     @GetMapping
-    public ApiResult<List<ConversationResponse>> list(@RequestParam(required = false) Long userId) {
+    public ApiResult<List<ConversationResponse>> list(@RequestParam(required = false) String userId) {
         return ApiResult.ok(conversationService.list(userId));
     }
 

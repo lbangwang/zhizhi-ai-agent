@@ -9,15 +9,18 @@ import java.time.LocalDateTime;
 @Data
 @Builder
 public class ConversationResponse {
-    private Long id;
+    private String id;
     private String chatId;
-    private Long userId;
+    private String userId;
     private String agentType;
     private String title;
     private String model;
     private Integer status;
-    private LocalDateTime createdAt;
-    private LocalDateTime updatedAt;
+    private String enterpriseId;
+    private String createBy;
+    private LocalDateTime createDate;
+    private String updateBy;
+    private LocalDateTime updateDate;
 
     public static ConversationResponse from(ConversationEntity entity) {
         return ConversationResponse.builder()
@@ -28,8 +31,11 @@ public class ConversationResponse {
                 .title(entity.getTitle())
                 .model(entity.getModel())
                 .status(entity.getStatus())
-                .createdAt(entity.getCreatedAt())
-                .updatedAt(entity.getUpdatedAt())
+                .enterpriseId(entity.getEnterpriseId())
+                .createBy(entity.getCreateBy())
+                .createDate(entity.getCreateDate())
+                .updateBy(entity.getUpdateBy())
+                .updateDate(entity.getUpdateDate())
                 .build();
     }
 }

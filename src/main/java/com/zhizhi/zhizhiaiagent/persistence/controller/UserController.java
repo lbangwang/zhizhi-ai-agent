@@ -30,7 +30,7 @@ public class UserController {
 
     @Operation(summary = "按 ID 查询用户")
     @GetMapping("/{id}")
-    public ApiResult<UserResponse> get(@PathVariable Long id) {
+    public ApiResult<UserResponse> get(@PathVariable String id) {
         return ApiResult.ok(userService.getById(id));
     }
 }

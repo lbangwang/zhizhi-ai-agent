@@ -92,8 +92,11 @@ mybatis-plus:
     log-impl: org.apache.ibatis.logging.slf4j.Slf4jImpl
   global-config:
     db-config:
-      id-type: auto
+      id-type: input
       table-underline: true
+      logic-delete-field: isDel
+      logic-delete-value: 1
+      logic-not-delete-value: 0
 
 # 数据源开关：false 时不连接 MySQL，应用可正常启动（D2 先预留，本地 MySQL 就绪后再开）
 app:

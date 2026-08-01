@@ -9,11 +9,15 @@ import java.time.LocalDateTime;
 @Data
 @Builder
 public class UserResponse {
-    private Long id;
+    private String id;
     private String username;
     private String nickname;
     private Integer status;
-    private LocalDateTime createdAt;
+    private String enterpriseId;
+    private String createBy;
+    private LocalDateTime createDate;
+    private String updateBy;
+    private LocalDateTime updateDate;
 
     public static UserResponse from(UserEntity entity) {
         return UserResponse.builder()
@@ -21,7 +25,11 @@ public class UserResponse {
                 .username(entity.getUsername())
                 .nickname(entity.getNickname())
                 .status(entity.getStatus())
-                .createdAt(entity.getCreatedAt())
+                .enterpriseId(entity.getEnterpriseId())
+                .createBy(entity.getCreateBy())
+                .createDate(entity.getCreateDate())
+                .updateBy(entity.getUpdateBy())
+                .updateDate(entity.getUpdateDate())
                 .build();
     }
 }

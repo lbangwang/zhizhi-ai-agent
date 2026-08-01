@@ -5,12 +5,12 @@ import com.zhizhi.zhizhiaiagent.persistence.dto.CreateUserRequest;
 import com.zhizhi.zhizhiaiagent.persistence.dto.UserResponse;
 import com.zhizhi.zhizhiaiagent.persistence.entity.UserEntity;
 import com.zhizhi.zhizhiaiagent.persistence.mapper.UserMapper;
+import com.zhizhi.zhizhiaiagent.persistence.support.AuditHelper;
+import com.zhizhi.zhizhiaiagent.persistence.support.IdGenerator;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
-
-import java.time.LocalDateTime;
 
 @Service
 @RequiredArgsConstructor
@@ -30,8 +30,8 @@ public class UserService {
             throw new IllegalArgumentException("username 已存在");
         }
 
-        LocalDateTime now = LocalDateTime.now();
         UserEntity entity = new UserEntity();
+        entity.setId(IdGenerator.nextId());
         entity.setUsername(username);
         // D4 再替换为真正哈希；此处仅占位落库
         entity.setPasswordHash(StringUtils.hasText(request.getPassword()) ? request.getPassword() : null);
@@ -39,14 +39,13 @@ public class UserService {
                 ? request.getNickname().trim()
                 : username);
         entity.setStatus(1);
-        entity.setCreatedAt(now);
-        entity.setUpdatedAt(now);
+        AuditHelper.fillOnCreate(entity, request.getCreateBy(), request.getEnterpriseId());
         userMapper.insert(entity);
         return UserResponse.from(entity);
     }
 
     @Transactional(readOnly = true)
-    public UserResponse getById(Long id) {
+    public UserResponse getById(String id) {
         UserEntity entity = userMapper.selectById(id);
         if (entity == null) {
             throw new IllegalArgumentException("用户不存在: " + id);

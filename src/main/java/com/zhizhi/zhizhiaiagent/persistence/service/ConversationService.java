@@ -11,14 +11,14 @@ import com.zhizhi.zhizhiaiagent.persistence.entity.MessageEntity;
 import com.zhizhi.zhizhiaiagent.persistence.mapper.ConversationMapper;
 import com.zhizhi.zhizhiaiagent.persistence.mapper.MessageMapper;
 import com.zhizhi.zhizhiaiagent.persistence.mapper.UserMapper;
+import com.zhizhi.zhizhiaiagent.persistence.support.AuditHelper;
+import com.zhizhi.zhizhiaiagent.persistence.support.IdGenerator;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 
-import java.time.LocalDateTime;
 import java.util.List;
-import java.util.UUID;
 
 @Service
 @RequiredArgsConstructor
@@ -31,21 +31,25 @@ public class ConversationService {
     @Transactional
     public ConversationResponse create(CreateConversationRequest request) {
         String chatId = StringUtils.hasText(request.getChatId())
-                ? request.getChatId().trim()
-                : "chat_" + UUID.randomUUID().toString().replace("-", "");
+                ? IdGenerator.requireId(request.getChatId(), "chatId")
+                : IdGenerator.nextId();
         Long exists = conversationMapper.selectCount(new LambdaQueryWrapper<ConversationEntity>()
                 .eq(ConversationEntity::getChatId, chatId));
         if (exists != null && exists > 0) {
             throw new IllegalArgumentException("chatId 已存在: " + chatId);
         }
-        if (request.getUserId() != null && userMapper.selectById(request.getUserId()) == null) {
-            throw new IllegalArgumentException("用户不存在: " + request.getUserId());
+        String userId = null;
+        if (StringUtils.hasText(request.getUserId())) {
+            userId = IdGenerator.requireId(request.getUserId(), "userId");
+            if (userMapper.selectById(userId) == null) {
+                throw new IllegalArgumentException("用户不存在: " + userId);
+            }
         }
 
-        LocalDateTime now = LocalDateTime.now();
         ConversationEntity entity = new ConversationEntity();
+        entity.setId(IdGenerator.nextId());
         entity.setChatId(chatId);
-        entity.setUserId(request.getUserId());
+        entity.setUserId(userId);
         entity.setAgentType(StringUtils.hasText(request.getAgentType())
                 ? request.getAgentType().trim()
                 : "SUPER_AGENT");
@@ -54,18 +58,17 @@ public class ConversationService {
                 : "新对话");
         entity.setModel(request.getModel());
         entity.setStatus(1);
-        entity.setCreatedAt(now);
-        entity.setUpdatedAt(now);
+        AuditHelper.fillOnCreate(entity, request.getCreateBy(), request.getEnterpriseId());
         conversationMapper.insert(entity);
         return ConversationResponse.from(entity);
     }
 
     @Transactional(readOnly = true)
-    public List<ConversationResponse> list(Long userId) {
+    public List<ConversationResponse> list(String userId) {
         LambdaQueryWrapper<ConversationEntity> wrapper = new LambdaQueryWrapper<ConversationEntity>()
-                .orderByDesc(ConversationEntity::getUpdatedAt);
-        if (userId != null) {
-            wrapper.eq(ConversationEntity::getUserId, userId);
+                .orderByDesc(ConversationEntity::getUpdateDate);
+        if (StringUtils.hasText(userId)) {
+            wrapper.eq(ConversationEntity::getUserId, userId.trim());
         }
         return conversationMapper.selectList(wrapper).stream()
                 .map(ConversationResponse::from)
@@ -89,7 +92,7 @@ public class ConversationService {
         if (request.getStatus() != null) {
             entity.setStatus(request.getStatus());
         }
-        entity.setUpdatedAt(LocalDateTime.now());
+        AuditHelper.fillOnUpdate(entity, null);
         conversationMapper.updateById(entity);
         return ConversationResponse.from(entity);
     }
@@ -111,17 +114,20 @@ public class ConversationService {
             throw new IllegalArgumentException("content 不能为空");
         }
         ConversationEntity conversation = requireByChatId(chatId);
-        LocalDateTime now = LocalDateTime.now();
 
         MessageEntity message = new MessageEntity();
+        message.setId(IdGenerator.nextId());
         message.setConversationId(conversation.getId());
         message.setRole(request.getRole().trim());
         message.setContent(request.getContent());
         message.setMetadata(request.getMetadata());
-        message.setCreatedAt(now);
+        String enterpriseId = StringUtils.hasText(request.getEnterpriseId())
+                ? request.getEnterpriseId()
+                : conversation.getEnterpriseId();
+        AuditHelper.fillOnCreate(message, request.getCreateBy(), enterpriseId);
         messageMapper.insert(message);
 
-        conversation.setUpdatedAt(now);
+        AuditHelper.fillOnUpdate(conversation, request.getCreateBy());
         conversationMapper.updateById(conversation);
         return MessageResponse.from(message);
     }
@@ -131,7 +137,7 @@ public class ConversationService {
         ConversationEntity conversation = requireByChatId(chatId);
         return messageMapper.selectList(new LambdaQueryWrapper<MessageEntity>()
                         .eq(MessageEntity::getConversationId, conversation.getId())
-                        .orderByAsc(MessageEntity::getCreatedAt))
+                        .orderByAsc(MessageEntity::getCreateDate))
                 .stream()
                 .map(MessageResponse::from)
                 .toList();
