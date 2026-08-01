@@ -8,6 +8,7 @@ import com.zhizhi.zhizhiaiagent.persistence.mapper.UserMapper;
 import com.zhizhi.zhizhiaiagent.persistence.support.AuditHelper;
 import com.zhizhi.zhizhiaiagent.persistence.support.IdGenerator;
 import lombok.RequiredArgsConstructor;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
@@ -16,7 +17,8 @@ import org.springframework.util.StringUtils;
 @RequiredArgsConstructor
 public class UserService {
 
-    private final UserMapper userMapper;
+    @Autowired
+    private  UserMapper userMapper;
 
     @Transactional
     public UserResponse create(CreateUserRequest request) {

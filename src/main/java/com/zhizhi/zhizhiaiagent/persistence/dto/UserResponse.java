@@ -4,7 +4,8 @@ import com.zhizhi.zhizhiaiagent.persistence.entity.UserEntity;
 import lombok.Builder;
 import lombok.Data;
 
-import java.time.LocalDateTime;
+
+import java.util.Date;
 
 @Data
 @Builder
@@ -15,9 +16,9 @@ public class UserResponse {
     private Integer status;
     private String enterpriseId;
     private String createBy;
-    private LocalDateTime createDate;
+    private Date createDate;
     private String updateBy;
-    private LocalDateTime updateDate;
+    private Date updateDate;
 
     public static UserResponse from(UserEntity entity) {
         return UserResponse.builder()

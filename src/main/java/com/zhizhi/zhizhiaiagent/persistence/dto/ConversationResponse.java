@@ -5,6 +5,7 @@ import lombok.Builder;
 import lombok.Data;
 
 import java.time.LocalDateTime;
+import java.util.Date;
 
 @Data
 @Builder
@@ -18,9 +19,9 @@ public class ConversationResponse {
     private Integer status;
     private String enterpriseId;
     private String createBy;
-    private LocalDateTime createDate;
+    private Date createDate;
     private String updateBy;
-    private LocalDateTime updateDate;
+    private Date updateDate;
 
     public static ConversationResponse from(ConversationEntity entity) {
         return ConversationResponse.builder()

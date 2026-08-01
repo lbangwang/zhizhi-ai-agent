@@ -98,7 +98,7 @@ mybatis-plus:
       logic-delete-value: 1
       logic-not-delete-value: 0
 
-# 数据源开关：false 时不连接 MySQL，应用可正常启动（D2 先预留，本地 MySQL 就绪后再开）
+# 数据源开关：false 时不连接 MySQL，true 应用可正常启动
 app:
   datasource:
-    enabled: ${MYSQL_ENABLED:false}
+    enabled: ${MYSQL_ENABLED:true}

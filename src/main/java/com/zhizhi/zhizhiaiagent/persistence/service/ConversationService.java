@@ -14,6 +14,7 @@ import com.zhizhi.zhizhiaiagent.persistence.mapper.UserMapper;
 import com.zhizhi.zhizhiaiagent.persistence.support.AuditHelper;
 import com.zhizhi.zhizhiaiagent.persistence.support.IdGenerator;
 import lombok.RequiredArgsConstructor;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
@@ -24,9 +25,14 @@ import java.util.List;
 @RequiredArgsConstructor
 public class ConversationService {
 
-    private final ConversationMapper conversationMapper;
-    private final MessageMapper messageMapper;
-    private final UserMapper userMapper;
+    @Autowired
+    private  ConversationMapper conversationMapper;
+
+    @Autowired
+    private  MessageMapper messageMapper;
+
+    @Autowired
+    private  UserMapper userMapper;
 
     @Transactional
     public ConversationResponse create(CreateConversationRequest request) {
