@@ -81,6 +81,32 @@ npm install
 npm run dev
 ```
 
+### 4. Docker Compose（MySQL + Redis，D5）
+
+本地可用 Docker 一键起基础设施（也可使用本机已安装的 MySQL / Redis）：
+
+```bash
+# 在项目根目录
+docker compose up -d
+```
+
+| 服务 | 默认端口 | 说明 |
+|------|----------|------|
+| MySQL 8 | 3306 | 库名 `zhizhi_ai_agent`；首次启动自动执行 `schema.sql` |
+| Redis 7 | 6379 | 默认密码 `root`（可用环境变量 `REDIS_PASSWORD` 覆盖） |
+
+应用 `.env` 示例：
+
+```bash
+MYSQL_ENABLED=true
+REDIS_ENABLED=true
+REDIS_HOST=127.0.0.1
+REDIS_PORT=6379
+REDIS_PASSWORD=root
+```
+
+停止信号：前端点「停止」→ `POST/GET /api/zhizhi-ai/stopChatByZhizhiManus` 写入 Redis key `zhizhi:chat:stop:{chatId}` → Agent 循环在下一步前退出，不再继续 step。
+
 ---
 
 ## 全职冲刺计划（3～4 周可投简历）
@@ -139,7 +165,7 @@ npm run dev
 | 会话 / 消息持久化 | MySQL + MyBatis-Plus CRUD；连库开关预留 | **D2 完成（待本地 MySQL）** |
 | 知识库可管理 | 上传、切片、向量检索、引用展示 | 待做（W2） |
 | 工具治理 | 审计日志；危险工具审批 | 待做（W2–W3） |
-| 真正取消任务 | 前端 abort + 后端停止循环 | 部分（前端有，后端待补） |
+| 真正取消任务 | 前端 abort + Redis 停止信号 + Agent 不再继续 step | **D5 完成** |
 | 产物可交付 | PDF/文件入库并可下载 | 待做（W2） |
 | 可观测 | TraceId、Token、耗时 | 待做（W3） |
 | 密钥与配置外置 | 环境变量 / `.env` | **已完成（D1）** |
@@ -274,6 +300,22 @@ Swagger：启用 MySQL 后打开 `/api/swagger-ui.html` 可见「用户」「会
 前端：`/login` 页；访问面试官 / 超级智能体需先登录。
 
 
+---
+
+## D5：Redis 停止信号 + Agent 可取消
+
+启用 `REDIS_ENABLED=true` 后，停止标记写入 Redis（多实例共享）；未启用时使用进程内 Map 兜底。
+
+| 能力 | 说明 |
+|------|------|
+| 停止接口 | `GET /zhizhi-ai/stopChatByZhizhiManus?chatId=...&type=COMMON\|PROFESSIONAL` |
+| Redis Key | `zhizhi:chat:stop:{chatId}`，TTL 600s |
+| Manus | `BaseAgent` 每步 / think↔act 之间轮询信号，命中则 `CANCELLED`，不再继续 step |
+| 面试官 | SSE `takeWhile` 检查同一停止信号，截断后续推送 |
+
+验收：超级智能体多步任务中点「停止」，后端日志出现 cancelled，后续 step 不再执行。
+
+
 ## 进度追踪
 
 | 里程碑 | 状态 |
@@ -282,7 +324,8 @@ Swagger：启用 MySQL 后打开 `/api/swagger-ui.html` 可见「用户」「会
 | D2 用户/会话/消息表 + CRUD（MyBatis-Plus，MySQL 连接预留） | ✅ 完成 |
 | D3 前端历史侧栏 + chatId 打通面试官 & Manus | ✅ 完成 |
 | D4 Sa-Token JWT 注册登录与接口鉴权 | ✅ 完成 |
-| W1 可取消 + Docker | 进行中（D5） |
+| D5 Redis 停止信号 + Agent 可取消 + Docker Compose | ✅ 完成 |
+| W1 工程底盘 | ✅ 完成 |
 | W2 知识库 + 产物 + 工具审计 | 待开始 |
 | W3 Workspace + HITL + MCP + Trace | 待开始 |
 | W4 Demo / 简历包装 | 待开始 |

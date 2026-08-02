@@ -47,6 +47,12 @@
             <scope>runtime</scope>
         </dependency>
 
+        <!-- D5: Redis 停止信号 -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-data-redis</artifactId>
+        </dependency>
+
         <!-- D4: Sa-Token + JWT -->
         <dependency>
             <groupId>cn.dev33</groupId>

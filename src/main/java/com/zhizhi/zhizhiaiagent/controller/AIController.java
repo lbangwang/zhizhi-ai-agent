@@ -2,6 +2,7 @@ package com.zhizhi.zhizhiaiagent.controller;
 
 import com.zhizhi.zhizhiaiagent.agent.model.ZhizhiManus;
 import com.zhizhi.zhizhiaiagent.agent.model.enums.AgentType;
+import com.zhizhi.zhizhiaiagent.agent.stop.ChatStopSignalService;
 import com.zhizhi.zhizhiaiagent.app.LoveApp;
 import com.zhizhi.zhizhiaiagent.config.ChatModelRouter;
 import com.zhizhi.zhizhiaiagent.demo.rag.MyQueryTransformer;
@@ -12,6 +13,7 @@ import org.springframework.ai.tool.ToolCallback;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.MediaType;
 import org.springframework.http.codec.ServerSentEvent;
+import org.springframework.util.StringUtils;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
@@ -38,6 +40,9 @@ public class AIController {
 
     @Autowired
     private MyQueryTransformer myQueryTransformer;
+
+    @Autowired
+    private ChatStopSignalService chatStopSignalService;
 
     @GetMapping("/doChatBySyn")
     public String doChatBySyn(String message, String chatId,
@@ -84,6 +89,12 @@ public class AIController {
             String enhancedMessage = myQueryTransformer.rewriteUserMessage(message, chatModel);
             ZhizhiManus zhizhiManus = new ZhizhiManus(toolCallbacks, chatModel,
                     chatModelRouter.resolveChatOptions(model));
+            //第一次打开对话框，清除停止信号对应key，并把停止service传入后续步骤
+            if (StringUtils.hasText(chatId)) {
+                chatStopSignalService.clear(chatId);
+                zhizhiManus.setChatId(chatId.trim());
+                zhizhiManus.setStopSignalService(chatStopSignalService);
+            }
             log.info("ZhizhiManus using model={}, chatId={}", model, chatId);
             return zhizhiManus.runStream(enhancedMessage);
         } catch (Exception e) {
@@ -101,12 +112,11 @@ public class AIController {
 
     @GetMapping(value = "/stopChatByZhizhiManus")
     public SseEmitter stopChatByZhizhiManus(String message, String chatId, String type) {
-        //AI 大模型一旦开始生成，服务端无法真正中断模型的计算，调用仍然会产生费用。
-        // 我们能做的，是在 Flux 数据流层面中断内容的输出——即后端虽然还会收到模型返回的完整内容，但我们可以选择不再将后续数据推送给客户端。
-        SseEmitter sseEmitter = new SseEmitter(300000L); // 设置超时时间为 5 分钟
+        // 模型单次 call 无法硬中断；D5 通过 Redis/内存停止信号阻止 Agent 继续下一步。
+        SseEmitter sseEmitter = new SseEmitter(300000L);
+        chatStopSignalService.requestStop(chatId);
         if (AgentType.PROFESSIONAL.getDesc().equals(type)) {
             loveApp.stopChat(chatId);
-
         }
         try {
             sseEmitter.send("停止输出");

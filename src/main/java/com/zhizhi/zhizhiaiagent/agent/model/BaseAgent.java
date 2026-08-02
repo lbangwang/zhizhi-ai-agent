@@ -2,6 +2,7 @@ package com.zhizhi.zhizhiaiagent.agent.model;
 
 import com.zhizhi.zhizhiaiagent.agent.model.enums.AgentStatus;
 import com.zhizhi.zhizhiaiagent.agent.model.exception.BusinessException;
+import com.zhizhi.zhizhiaiagent.agent.stop.ChatStopSignalService;
 import lombok.Data;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.StringUtils;
@@ -25,6 +26,7 @@ public abstract class BaseAgent {
     private static final long SSE_TIMEOUT_MS = 300_000L;
     private static final String FALLBACK_EMPTY_ANSWER = "抱歉，本次未能生成有效回答，请换个问法再试。";
     private static final String LEGACY_MAX_STEP_HINT = "已达到最大推理步骤，以下为当前结论。";
+    private static final String STOPPED_ANSWER = "已停止生成";
 
     /** Agent 名称 */
     private String name;
@@ -42,9 +44,13 @@ public abstract class BaseAgent {
     private ChatClient chatClient;
     /** 本轮会话消息 */
     private List<Message> messageList = new ArrayList<>();
+    /** 业务会话 ID（用于停止信号） */
+    private String chatId;
+    /** 停止信号服务（由 Controller 注入） */
+    private ChatStopSignalService stopSignalService;
 
     /**
-     * 同步执行 Agent：校验入参后循环调用 {@link #step()}，直到完成或达到最大步数。
+     * 同步执行 Agent：校验入参后循环调用 {@link #step()}，直到完成、取消或达到最大步数。
      *
      * @param userPrompt 用户输入
      * @return 各步骤结果拼接文本
@@ -62,10 +68,18 @@ public abstract class BaseAgent {
         List<String> results = new ArrayList<>();
         try {
             this.currentStep = 1;
-            while (this.currentStep <= this.maxSteps && this.status != AgentStatus.FINISHED) {
+            while (this.currentStep <= this.maxSteps && canContinueLoop()) {
+                if (isStopRequested()) {
+                    markCancelled();
+                    results.add("step " + this.currentStep + ": " + STOPPED_ANSWER);
+                    break;
+                }
                 log.info("当前步骤：{}/{}", this.currentStep, this.maxSteps);
                 results.add("step " + this.currentStep + ": " + step());
                 this.currentStep++;
+            }
+            if (this.status == AgentStatus.CANCELLED) {
+                return String.join("\n", results);
             }
             if (currentStep > maxSteps) {
                 this.status = AgentStatus.FINISHED;
@@ -114,6 +128,7 @@ public abstract class BaseAgent {
     /**
      * 流式流程：校验状态 → 逐步 think/act → 兜底综合结论 → 推送思考完成与最终回答。
      * 事件顺序：thinking_start → thinking_delta/tool_done → thinking_done → answer_done。
+     * 每步开始前轮询停止信号；若已停止则不再继续 step。
      *
      * @param userPrompt 用户输入
      * @param sseEmitter SSE 输出通道
@@ -139,7 +154,12 @@ public abstract class BaseAgent {
 
             String finalAnswer = null;
             this.currentStep = 1;
-            while (this.currentStep <= this.maxSteps && this.status != AgentStatus.FINISHED) {
+            while (this.currentStep <= this.maxSteps && canContinueLoop()) {
+                //校验用户是否已经停止
+                if (isStopRequested()) {
+                    markCancelled();
+                    break;
+                }
                 log.info("当前步骤：{}/{}", this.currentStep, this.maxSteps);
                 boolean lastStep = this.currentStep >= this.maxSteps;
                 String phase = lastStep ? "正在整理最终结论…" : "正在分析问题并规划行动…";
@@ -147,6 +167,9 @@ public abstract class BaseAgent {
 
                 if (this instanceof ReActAgent reActAgent) {
                     String stepAnswer = runOneReActStep(reActAgent, lastStep, sseEmitter);
+                    if (this.status == AgentStatus.CANCELLED) {
+                        break;
+                    }
                     if (stepAnswer != null || this.status == AgentStatus.FINISHED) {
                         finalAnswer = stepAnswer;
                         break;
@@ -159,6 +182,16 @@ public abstract class BaseAgent {
                     }
                 }
                 this.currentStep++;
+            }
+
+            long elapsedMs = System.currentTimeMillis() - thinkingStartedAt;
+
+            if (this.status == AgentStatus.CANCELLED) {
+                sseEmitter.send(AgentStreamEvent.cancelled(STOPPED_ANSWER));
+                sseEmitter.send(AgentStreamEvent.thinkingDone(null, elapsedMs));
+                sseEmitter.send(AgentStreamEvent.answerDone(STOPPED_ANSWER));
+                sseEmitter.complete();
+                return;
             }
 
             if (this.status != AgentStatus.FINISHED) {
@@ -178,7 +211,6 @@ public abstract class BaseAgent {
                 }
             }
 
-            long elapsedMs = System.currentTimeMillis() - thinkingStartedAt;
             sseEmitter.send(AgentStreamEvent.thinkingDone(null, elapsedMs));
             if (StringUtils.isBlank(finalAnswer)) {
                 finalAnswer = FALLBACK_EMPTY_ANSWER;
@@ -197,6 +229,7 @@ public abstract class BaseAgent {
 
     /**
      * 执行一轮 ReAct：推送思考文案；若需行动则调用工具并推送摘要；必要时综合最终回答。
+     * think 与 act 之间也会检查停止信号，避免取消后仍执行工具。
      *
      * @param reActAgent 当前 ReAct 智能体
      * @param lastStep   是否已到最大步
@@ -207,6 +240,11 @@ public abstract class BaseAgent {
             throws IOException {
         reActAgent.setLastStepFinalAnswer(false);
         Boolean needAct = reActAgent.think();
+        //调用工具之前判断状态
+        if (isStopRequested()) {
+            markCancelled();
+            return STOPPED_ANSWER;
+        }
         boolean isFinal = Boolean.FALSE.equals(needAct);
         reActAgent.setLastStepFinalAnswer(isFinal);
 
@@ -233,6 +271,12 @@ public abstract class BaseAgent {
                     this.currentStep, "已接近步骤上限，改为综合已有信息生成回答…"));
             this.status = AgentStatus.FINISHED;
             return synthesizeFinalAnswer(reActAgent);
+        }
+
+        //调用工具之后判断状态，是否需要推送后续信息
+        if (isStopRequested()) {
+            markCancelled();
+            return STOPPED_ANSWER;
         }
 
         // 执行工具并推送用户可读摘要
@@ -274,6 +318,24 @@ public abstract class BaseAgent {
         return AgentUserFacingFormatter.toAnswerDisplay(reActAgent.getFinalAnswer());
     }
 
+    private boolean canContinueLoop() {
+        return this.status != AgentStatus.FINISHED
+                && this.status != AgentStatus.CANCELLED
+                && this.status != AgentStatus.ERROR;
+    }
+
+    private boolean isStopRequested() {
+        return stopSignalService != null
+                && StringUtils.isNotBlank(chatId)
+                && stopSignalService.shouldStop(chatId);
+    }
+
+    private void markCancelled() {
+        this.status = AgentStatus.CANCELLED;
+        log.info("Agent cancelled by stop signal, chatId={}, step={}/{}",
+                chatId, currentStep, maxSteps);
+    }
+
     /**
      * 同步模式下的单步执行，由子类实现具体逻辑。
      *
@@ -282,9 +344,11 @@ public abstract class BaseAgent {
     public abstract String step();
 
     /**
-     * 清理本轮运行资源；子类可覆盖扩展。
+     * 清理本轮运行资源；清除停止信号，避免影响下一轮。
      */
     protected void cleanup() {
-        // 默认无额外资源
+        if (stopSignalService != null && StringUtils.isNotBlank(chatId)) {
+            stopSignalService.clear(chatId);
+        }
     }
 }

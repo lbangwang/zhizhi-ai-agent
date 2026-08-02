@@ -3,6 +3,7 @@ package com.zhizhi.zhizhiaiagent.app;
 
 import com.zhizhi.zhizhiaiagent.advisor.MyLogAdvisor;
 import com.zhizhi.zhizhiaiagent.advisor.ReReadingAdvisor;
+import com.zhizhi.zhizhiaiagent.agent.stop.ChatStopSignalService;
 import com.zhizhi.zhizhiaiagent.chatMemory.FileBasedChatMemory;
 import com.zhizhi.zhizhiaiagent.config.ChatModelRouter;
 import com.zhizhi.zhizhiaiagent.demo.rag.MyQueryTransformer;
@@ -45,7 +46,6 @@ import reactor.core.publisher.Flux;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.atomic.AtomicBoolean;
 
 import static org.springframework.ai.chat.client.advisor.AbstractChatMemoryAdvisor.CHAT_MEMORY_CONVERSATION_ID_KEY;
 import static org.springframework.ai.chat.client.advisor.AbstractChatMemoryAdvisor.CHAT_MEMORY_RETRIEVE_SIZE_KEY;
@@ -205,8 +205,8 @@ public class LoveApp {
     @Autowired
     private MyQueryTransformer myQueryTransformer;
 
-
-
+    @Autowired
+    private ChatStopSignalService chatStopSignalService;
 
     public String doChatWithMcpTest(String message, String chatId) {
         ToolCallback[] toolCallbackProviderToolCallbacks = syncMcpToolCallbackProvider.getToolCallbacks();
@@ -225,9 +225,6 @@ public class LoveApp {
         return content;
     }
 
-
-    // 使用AtomicBoolean支持同一会话多次请求
-    private final Map<String, AtomicBoolean> sessionStates = new ConcurrentHashMap<>();
 
     /**
      * 流式输出（默认千问）
@@ -272,13 +269,10 @@ public class LoveApp {
             log.warn("Session {} query rewrite skipped, use original message", chatId, e);
             enhancedMessage = message;
         }
-        log.info("doChatByStream.enhanced.message: {}",  enhancedMessage);
+        log.info("doChatByStream.enhanced.message: {}", enhancedMessage);
 
-        //添加对于的会话状态，如果不存在则创建一个新的AtomicBoolean对象
-        AtomicBoolean state = sessionStates.computeIfAbsent(chatId,
-                k -> new AtomicBoolean(true));
-        // 重置状态为true（允许新的流）
-        state.set(true);
+        // 开始流式输出前清除停止标记
+        chatStopSignalService.clear(chatId);
 
         ChatClient.ChatClientRequestSpec promptSpec = selectedClient
                 .prompt()
@@ -297,63 +291,45 @@ public class LoveApp {
                 .content();
         // 应用控制逻辑
         return contentFlux
-                // 关键：检查是否允许继续输出
+                // 关键：检查 Redis/内存停止信号，决定是否继续推送
                 .takeWhile(content -> {
-                    // 检查状态
-                    boolean canContinue = state.get();
+                    boolean canContinue = !chatStopSignalService.shouldStop(chatId);
                     if (!canContinue) {
                         log.debug("Session {} stopped by user", chatId);
                     }
                     return canContinue;
                 })
-                // 在流结束时清理或重置状态
                 .doFinally(signalType -> {
-                    // 重置状态为true供下次使用（而不是删除）
-                    state.set(true);
-                    log.debug("Session {} finished with signal: {}, state reset for next use",
+                    chatStopSignalService.clear(chatId);
+                    log.debug("Session {} finished with signal: {}, stop flag cleared",
                             chatId, signalType);
                 })
-                // 错误处理
                 .onErrorResume(throwable -> {
                     log.error("Stream error for session {}", chatId, throwable);
-                    // 重置状态，允许重试
-                    state.set(true);
-                    // 返回友好的错误信息
+                    chatStopSignalService.clear(chatId);
                     return Flux.just("系统处理异常，请稍后重试。错误信息：" + throwable.getMessage());
                 })
-                // 添加超时保护（5分钟）
                 .timeout(java.time.Duration.ofMinutes(5))
                 .onErrorResume(java.util.concurrent.TimeoutException.class, e -> {
                     log.warn("Session {} timeout", chatId);
-                    state.set(true);
+                    chatStopSignalService.clear(chatId);
                     return Flux.just("请求超时，请重试");
                 });
     }
 
 
     /**
-     * 停止会话
+     * 停止会话（写入停止信号，截断后续 SSE 推送）。
      *
      * @param chatId 会话ID
      */
     public void stopChat(String chatId) {
-        // 1. 参数校验
         if (chatId == null || chatId.trim().isEmpty()) {
             log.warn("Attempt to stop chat with empty chatId");
             return;
         }
-
         log.info("Stopping session: {}", chatId);
-
-        // 2. 检查会话是否存在
-        AtomicBoolean state = sessionStates.get(chatId);
-        if (state == null) {
-            log.warn("No active session found for {}", chatId);
-            return;
-        }
-
-        // 3. 设置状态为false，停止输出
-        state.set(false);
+        chatStopSignalService.requestStop(chatId);
     }
 
 }

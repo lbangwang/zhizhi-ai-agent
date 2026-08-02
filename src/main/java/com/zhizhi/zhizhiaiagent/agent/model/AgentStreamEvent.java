@@ -90,6 +90,16 @@ public final class AgentStreamEvent {
     }
 
     /**
+     * 构建用户取消事件（随后通常还会推送 answer_done「已停止生成」）。
+     *
+     * @param text 提示文案
+     * @return JSON 事件字符串
+     */
+    public static String cancelled(String text) {
+        return toJson("cancelled", null, text != null ? text : "已停止生成", null, null);
+    }
+
+    /**
      * 将事件字段组装为 JSON 字符串。
      *
      * @param type      事件类型

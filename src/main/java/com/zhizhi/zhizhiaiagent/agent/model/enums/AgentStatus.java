@@ -22,5 +22,10 @@ public enum AgentStatus {
     /**
      * 错误状态
      */
-     ERROR
+    ERROR,
+
+    /**
+     * 用户取消
+     */
+    CANCELLED
 }

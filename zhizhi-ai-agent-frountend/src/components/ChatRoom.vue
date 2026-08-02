@@ -1091,6 +1091,16 @@ function handleAgentEvent(raw, aiIndex) {
     case 'answer_done':
       startAnswerTypewriter(msg, formatAnswerText(event.text || ''))
       break
+    case 'cancelled':
+      // D5：后端停止信号生效后推送；随后通常还有 answer_done
+      stopAnswerTypewriter(msg, { flush: true })
+      if (msg.thinking.status === 'in_progress' || thinkingFinishRequested) {
+        applyThinkingFinished(msg)
+      }
+      if (!msg.thinking?.text && msg.thinking) {
+        msg.thinking.text = event.text || '已停止生成'
+      }
+      break
     case 'error':
       stopAnswerTypewriter(msg, { flush: true })
       msg.answer.status = 'done'
