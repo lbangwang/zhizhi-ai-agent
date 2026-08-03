@@ -60,3 +60,26 @@ CREATE TABLE IF NOT EXISTS message (
     KEY idx_message_enterprise_id (enterprise_id),
     KEY idx_message_is_del (is_del)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='消息';
+
+-- W2: 知识库文档元数据（向量正文落在 SimpleVectorStore 文件中）
+CREATE TABLE IF NOT EXISTS kb_document (
+    id              CHAR(32)     NOT NULL PRIMARY KEY COMMENT '主键，32位字符串',
+    user_id         CHAR(32)     NOT NULL COMMENT '所属用户ID',
+    title           VARCHAR(256) NOT NULL COMMENT '展示标题',
+    filename        VARCHAR(256) NOT NULL COMMENT '原始文件名',
+    content_type    VARCHAR(128) NULL COMMENT 'MIME 类型',
+    file_path       VARCHAR(512) NOT NULL COMMENT '本地存储相对路径',
+    chunk_count     INT          NOT NULL DEFAULT 0 COMMENT '切片数量',
+    chunk_ids       LONGTEXT     NULL COMMENT 'VectorStore 文档ID列表 JSON',
+    status          INT          NOT NULL DEFAULT 1 COMMENT '1=就绪 0=失败',
+    error_message   VARCHAR(512) NULL COMMENT '失败原因',
+    create_date     DATETIME     NOT NULL COMMENT '创建时间',
+    create_by       VARCHAR(64)  NULL COMMENT '创建人',
+    update_date     DATETIME     NOT NULL COMMENT '更新时间',
+    update_by       VARCHAR(64)  NULL COMMENT '更新人',
+    is_del          TINYINT      NOT NULL DEFAULT 0 COMMENT '0=未删除 1=已删除',
+    enterprise_id   CHAR(32)     NULL COMMENT '企业/租户ID',
+    KEY idx_kb_document_user_id (user_id),
+    KEY idx_kb_document_update_date (update_date),
+    KEY idx_kb_document_is_del (is_del)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='知识库文档元数据';

@@ -1,6 +1,10 @@
 spring:
   application:
     name: zhizhi-ai-agent
+  servlet:
+    multipart:
+      max-file-size: 10MB
+      max-request-size: 12MB
   # D2: MySQL 连接占位。本地装好 MySQL 后在 .env 填写，并设置 MYSQL_ENABLED=true
   datasource:
     url: ${MYSQL_URL:jdbc:mysql://127.0.0.1:3306/zhizhi_ai_agent?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai&useSSL=false&allowPublicKeyRetrieval=true}
@@ -106,7 +110,7 @@ mybatis-plus:
       logic-delete-value: 1
       logic-not-delete-value: 0
 
-# 数据源 / Redis 开关
+# 数据源 / Redis / 知识库开关
 app:
   datasource:
     enabled: ${MYSQL_ENABLED:true}
@@ -114,6 +118,24 @@ app:
     enabled: ${REDIS_ENABLED:false}
     stop-key-prefix: "zhizhi:chat:stop:"
     stop-ttl-seconds: 600
+  # W2: 本地 VectorStore（SimpleVectorStore）知识库
+  knowledge:
+    file-dir: ${KNOWLEDGE_FILE_DIR:data/knowledge-files}
+    vector-store-file: ${KNOWLEDGE_VECTOR_STORE_FILE:data/vector-store/knowledge-simple.json}
+    # 切片策略：paragraph=按空行分段（超长回退 token）；token=纯 token 窗口切
+    split-strategy: ${KNOWLEDGE_SPLIT_STRATEGY:paragraph}
+    chunk-token-size: 400
+    min-chunk-size-chars: 100
+    min-chunk-length-to-embed: 10
+    max-num-chunks: 5000
+    # paragraph 专用：单段超过该字符数则 token 再切；0 表示自动取 chunk-token-size*2
+    paragraph-max-chars: ${KNOWLEDGE_PARAGRAPH_MAX_CHARS:0}
+    # paragraph 专用：短于该字符的段与下一段合并
+    paragraph-min-merge-chars: ${KNOWLEDGE_PARAGRAPH_MIN_MERGE_CHARS:80}
+    top-k: 4
+    similarity-threshold: 0.45
+    seed-classpath-docs: ${KNOWLEDGE_SEED_CLASSPATH:true}
+    cloud-rag-enabled: ${KNOWLEDGE_CLOUD_RAG_ENABLED:false}
 
 # D4: Sa-Token JWT
 sa-token:

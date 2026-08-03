@@ -41,3 +41,4 @@ build/
 ### Runtime data ###
 tmp/
 tmpfile/
+data/

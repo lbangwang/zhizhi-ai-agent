@@ -163,7 +163,7 @@ REDIS_PASSWORD=root
 |------|------|------|
 | 用户认证 + 数据隔离 | Sa-Token JWT，按用户隔离会话 | **D4 完成** |
 | 会话 / 消息持久化 | MySQL + MyBatis-Plus CRUD；连库开关预留 | **D2 完成（待本地 MySQL）** |
-| 知识库可管理 | 上传、切片、向量检索、引用展示 | 待做（W2） |
+| 知识库可管理 | 上传、切片、VectorStore 检索、对话引用卡片 | **W2 D1–D3 完成** |
 | 工具治理 | 审计日志；危险工具审批 | 待做（W2–W3） |
 | 真正取消任务 | 前端 abort + Redis 停止信号 + Agent 不再继续 step | **D5 完成** |
 | 产物可交付 | PDF/文件入库并可下载 | 待做（W2） |
@@ -316,6 +316,39 @@ Swagger：启用 MySQL 后打开 `/api/swagger-ui.html` 可见「用户」「会
 验收：超级智能体多步任务中点「停止」，后端日志出现 cancelled，后续 step 不再执行。
 
 
+---
+
+## W2 D1–D2：知识库（上传 → 切片 → VectorStore → 检索）
+
+向量库当前使用 Spring AI **`SimpleVectorStore`**（本地 JSON 持久化，文件见 `data/vector-store/`）。文档元数据存 MySQL 表 `kb_document`。
+
+切片策略（`KNOWLEDGE_SPLIT_STRATEGY` / `app.knowledge.split-strategy`）：
+
+| 值 | 说明 |
+|----|------|
+| `paragraph`（默认） | 按空行分段；过短合并；单段过长再回退 Token 切 |
+| `token` | 纯 `TokenTextSplitter` 按 token 窗口切 |
+
+启用前执行：
+
+```bash
+mysql -uroot -p zhizhi_ai_agent < src/main/resources/db/tables/04_kb_document.sql
+# 或重新执行完整 schema.sql
+```
+
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| POST | `/knowledge/documents` | multipart 上传 `.md` / `.txt` / `.docx` / `.doc`，自动切片写入 VectorStore |
+| GET | `/knowledge/documents` | 当前用户文档列表 |
+| GET | `/knowledge/documents/{id}` | 详情 |
+| DELETE | `/knowledge/documents/{id}` | 删除元数据 + VectorStore 切片 |
+| POST | `/knowledge/retrieve` | `{ "query": "...", "topK": 4 }` 返回引用片段 |
+
+面试官流式对话会：检索本地 VectorStore → 拼入提示词 → SSE 先推 `__CITATIONS__[...]`；前端解析为引用卡片（展示来自哪篇文档）。
+
+前端：`/knowledge` 知识库管理页（需登录）；首页入口「知识库」。
+
+
 ## 进度追踪
 
 | 里程碑 | 状态 |
@@ -326,7 +359,8 @@ Swagger：启用 MySQL 后打开 `/api/swagger-ui.html` 可见「用户」「会
 | D4 Sa-Token JWT 注册登录与接口鉴权 | ✅ 完成 |
 | D5 Redis 停止信号 + Agent 可取消 + Docker Compose | ✅ 完成 |
 | W1 工程底盘 | ✅ 完成 |
-| W2 知识库 + 产物 + 工具审计 | 待开始 |
+| W2 D1–D3 知识库（后端链路 + 前端页 + 引用卡片） | ✅ 完成 |
+| W2 产物 + 工具审计 | 待开始 |
 | W3 Workspace + HITL + MCP + Trace | 待开始 |
 | W4 Demo / 简历包装 | 待开始 |
 

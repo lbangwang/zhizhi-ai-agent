@@ -9,6 +9,7 @@
       <div class="home-content">
         <div class="auth-bar">
           <template v-if="user">
+            <button class="auth-btn" type="button" @click="$router.push('/knowledge')">知识库</button>
             <span class="auth-user">{{ user.nickname || user.username }}</span>
             <button class="auth-btn" type="button" @click="onLogout">退出</button>
           </template>
@@ -45,6 +46,16 @@
               <span class="enter-link">立即体验 <i>→</i></span>
             </div>
           </button>
+
+          <button class="app-card knowledge" type="button" @click="goKnowledge">
+            <div class="card-glow" aria-hidden="true" />
+            <div class="knowledge-mark" aria-hidden="true">KB</div>
+            <div class="app-body">
+              <h2>知识库</h2>
+              <p>上传文档切片入库，对话时展示「来自哪篇文档」的引用卡片</p>
+              <span class="enter-link">管理知识库 <i>→</i></span>
+            </div>
+          </button>
         </div>
       </div>
     </div>
@@ -54,6 +65,7 @@
 
 <script setup>
 import { ref, onMounted } from 'vue'
+import { useRouter } from 'vue-router'
 import ParticleBackground from '../components/ParticleBackground.vue'
 import BootTerminal from '../components/BootTerminal.vue'
 import SiteFooter from '../components/SiteFooter.vue'
@@ -61,6 +73,7 @@ import { logout } from '../api/auth.js'
 import { APP_AVATARS, BRAND_NAME } from '../constants/apps.js'
 import { getUser, isLoggedIn } from '../utils/auth.js'
 
+const router = useRouter()
 const brandName = BRAND_NAME
 const avatars = APP_AVATARS
 const user = ref(null)
@@ -72,6 +85,14 @@ onMounted(() => {
 async function onLogout() {
   await logout()
   user.value = null
+}
+
+function goKnowledge() {
+  if (!isLoggedIn()) {
+    router.push({ path: '/login', query: { redirect: '/knowledge' } })
+    return
+  }
+  router.push('/knowledge')
 }
 </script>
 
@@ -238,7 +259,7 @@ async function onLogout() {
 
 .app-grid {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: clamp(14px, 2.5vw, 22px);
 }
 
@@ -284,6 +305,28 @@ async function onLogout() {
   background: rgba(31, 111, 139, 0.45);
 }
 
+.app-card.knowledge .card-glow {
+  background: rgba(95, 168, 192, 0.45);
+}
+
+.knowledge-mark {
+  position: relative;
+  z-index: 1;
+  width: 64px;
+  height: 64px;
+  border-radius: 18px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--font-display);
+  font-size: 18px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  color: #fff;
+  background: linear-gradient(145deg, #1f6f8b, #2f7a6b);
+  box-shadow: 0 8px 20px rgba(31, 111, 139, 0.28);
+}
+
 @media (hover: hover) and (pointer: fine) {
   .app-card:hover {
     transform: translateY(-8px) scale(1.015);
@@ -298,6 +341,10 @@ async function onLogout() {
     border-color: rgba(31, 111, 139, 0.45);
   }
 
+  .app-card.knowledge:hover {
+    border-color: rgba(95, 168, 192, 0.55);
+  }
+
   .app-card:hover .card-glow {
     opacity: 1;
   }
@@ -306,7 +353,8 @@ async function onLogout() {
     transform: translateX(4px);
   }
 
-  .app-card:hover .app-avatar {
+  .app-card:hover .app-avatar,
+  .app-card:hover .knowledge-mark {
     transform: scale(1.06) rotate(-2deg);
   }
 }
@@ -376,6 +424,12 @@ async function onLogout() {
   z-index: 1;
 }
 
+@media (max-width: 960px) {
+  .app-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
 @media (max-width: 900px) {
   .home-content {
     max-width: 720px;
@@ -405,10 +459,15 @@ async function onLogout() {
     gap: 14px;
   }
 
-  .app-avatar {
+  .app-avatar,
+  .knowledge-mark {
     width: 52px;
     height: 52px;
     border-radius: 14px;
+  }
+
+  .knowledge-mark {
+    font-size: 15px;
   }
 
   .app-body p {

@@ -130,6 +130,10 @@
               <template v-else-if="!msg.thinking">
                 <p class="bubble-text">{{ msg.content }}</p>
               </template>
+              <CitationCards
+                v-if="msg.citations?.length"
+                :citations="msg.citations"
+              />
               </div>
           </div>
           <div
@@ -308,8 +312,10 @@ import { APP_AVATARS } from '../constants/apps.js'
 import { DEFAULT_MODEL, MODEL_OPTIONS } from '../constants/models.js'
 import { generateChatId } from '../utils/chatId.js'
 import { authHeader } from '../utils/auth.js'
+import { isCitationFooter, parseCitationsChunk } from '../utils/citations.js'
 import SiteFooter from './SiteFooter.vue'
 import ParticleBackground from './ParticleBackground.vue'
+import CitationCards from './CitationCards.vue'
 
 marked.setOptions({
   gfm: true,
@@ -1275,6 +1281,26 @@ async function sendMessage(overrideText) {
       (chunk) => {
         const content = (chunk || '').trim()
         if (!content) return
+
+        // W2 D3：知识库引用前缀（面试官流式）
+        if (content.includes('__CITATIONS__')) {
+          const { citations, rest } = parseCitationsChunk(content)
+          if (citations?.length) {
+            messages.value[aiIndex].citations = citations
+          }
+          if (rest) {
+            if (useAgentUi || isAgentEventPayload(rest)) {
+              handleAgentEvent(rest, aiIndex)
+            } else {
+              messages.value[aiIndex].content += rest
+            }
+          }
+          return
+        }
+        // 已有引用卡片时，忽略后端「参考文档」页脚，避免重复
+        if (messages.value[aiIndex]?.citations?.length && isCitationFooter(content)) {
+          return
+        }
 
         // 智能体结构化事件：始终走思考/回答面板，避免把 JSON 当普通气泡
         if (useAgentUi || isAgentEventPayload(content)) {

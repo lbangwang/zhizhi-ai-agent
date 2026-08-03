@@ -53,6 +53,18 @@
             <artifactId>spring-boot-starter-data-redis</artifactId>
         </dependency>
 
+        <!-- W2: Word 文档解析（.docx / .doc） -->
+        <dependency>
+            <groupId>org.apache.poi</groupId>
+            <artifactId>poi-ooxml</artifactId>
+            <version>5.2.5</version>
+        </dependency>
+        <dependency>
+            <groupId>org.apache.poi</groupId>
+            <artifactId>poi-scratchpad</artifactId>
+            <version>5.2.5</version>
+        </dependency>
+
         <!-- D4: Sa-Token + JWT -->
         <dependency>
             <groupId>cn.dev33</groupId>

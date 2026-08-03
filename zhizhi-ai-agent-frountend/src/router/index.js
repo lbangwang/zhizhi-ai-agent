@@ -3,6 +3,7 @@ import Home from '../views/Home.vue'
 import LoveMaster from '../views/LoveMaster.vue'
 import SuperAgent from '../views/SuperAgent.vue'
 import Login from '../views/Login.vue'
+import Knowledge from '../views/Knowledge.vue'
 import { isLoggedIn } from '../utils/auth.js'
 
 const routes = [
@@ -27,6 +28,12 @@ const routes = [
     path: '/super-agent',
     name: 'SuperAgent',
     component: SuperAgent,
+    meta: { requiresAuth: true },
+  },
+  {
+    path: '/knowledge',
+    name: 'Knowledge',
+    component: Knowledge,
     meta: { requiresAuth: true },
   },
 ]

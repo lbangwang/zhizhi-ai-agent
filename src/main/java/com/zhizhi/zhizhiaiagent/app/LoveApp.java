@@ -1,6 +1,8 @@
 package com.zhizhi.zhizhiaiagent.app;
 
 
+import cn.dev33.satoken.stp.StpUtil;
+import cn.hutool.json.JSONUtil;
 import com.zhizhi.zhizhiaiagent.advisor.MyLogAdvisor;
 import com.zhizhi.zhizhiaiagent.advisor.ReReadingAdvisor;
 import com.zhizhi.zhizhiaiagent.agent.stop.ChatStopSignalService;
@@ -8,6 +10,8 @@ import com.zhizhi.zhizhiaiagent.chatMemory.FileBasedChatMemory;
 import com.zhizhi.zhizhiaiagent.config.ChatModelRouter;
 import com.zhizhi.zhizhiaiagent.demo.rag.MyQueryTransformer;
 import com.zhizhi.zhizhiaiagent.model.ChatModelType;
+import com.zhizhi.zhizhiaiagent.persistence.dto.KnowledgeCitation;
+import com.zhizhi.zhizhiaiagent.rag.KnowledgeVectorStoreService;
 import com.zhizhi.zhizhiaiagent.rag.LoveAppContextualQueryAugmenterFactory;
 import com.zhizhi.zhizhiaiagent.rag.LoveAppRagCustomAdvisorFactory;
 import io.modelcontextprotocol.client.McpAsyncClient;
@@ -208,6 +212,12 @@ public class LoveApp {
     @Autowired
     private ChatStopSignalService chatStopSignalService;
 
+    @Autowired
+    private KnowledgeVectorStoreService knowledgeVectorStoreService;
+
+    @Value("${app.knowledge.cloud-rag-enabled:false}")
+    private boolean cloudRagEnabled;
+
     public String doChatWithMcpTest(String message, String chatId) {
         ToolCallback[] toolCallbackProviderToolCallbacks = syncMcpToolCallbackProvider.getToolCallbacks();
         ChatResponse response = chatClient
@@ -271,26 +281,46 @@ public class LoveApp {
         }
         log.info("doChatByStream.enhanced.message: {}", enhancedMessage);
 
+        // W2：本地 VectorStore 检索，拼入提示词并向前端透出引用片段
+        String userId = currentUserIdOrNull();
+        List<KnowledgeCitation> citations = List.of();
+        try {
+            //获取知识库切片
+            citations = knowledgeVectorStoreService.search(enhancedMessage, null, userId);
+        } catch (Exception e) {
+            log.warn("Session {} local knowledge retrieve skipped", chatId, e);
+        }
+        //用户问题追加上引用片段
+        String ragUserMessage = buildRagUserMessage(enhancedMessage, citations);
+
         // 开始流式输出前清除停止标记
         chatStopSignalService.clear(chatId);
 
         ChatClient.ChatClientRequestSpec promptSpec = selectedClient
                 .prompt()
-                .user(enhancedMessage)
+                .user(ragUserMessage)
                 .advisors(spec -> spec.param(CHAT_MEMORY_CONVERSATION_ID_KEY, chatId)
                         .param(CHAT_MEMORY_RETRIEVE_SIZE_KEY, 10))
                 // 开启日志，便于观察效果
                 .advisors(new MyLogAdvisor());
-        // 云知识库顾问仅适配千问 / DashScope
-        if (chatModelRouter.isQwen(model)) {
+        // 可选：百炼云知识库（默认关闭，优先本地 VectorStore）
+        if (cloudRagEnabled && chatModelRouter.isQwen(model)) {
             promptSpec = promptSpec.advisors(loveAppRagCloudAdvisor);
         }
         Flux<String> contentFlux = promptSpec
                 .tools(toolCallbackProvider)
                 .stream()
                 .content();
+
+        Flux<String> withCitations = citations.isEmpty()
+                ? contentFlux
+                : Flux.concat(
+                        Flux.just("__CITATIONS__" + JSONUtil.toJsonStr(citations) + "\n"),
+                        contentFlux,
+                        Flux.just(buildCitationFooter(citations)));
+
         // 应用控制逻辑
-        return contentFlux
+        return withCitations
                 // 关键：检查 Redis/内存停止信号，决定是否继续推送
                 .takeWhile(content -> {
                     boolean canContinue = !chatStopSignalService.shouldStop(chatId);
@@ -315,6 +345,50 @@ public class LoveApp {
                     chatStopSignalService.clear(chatId);
                     return Flux.just("请求超时，请重试");
                 });
+    }
+
+    private static String currentUserIdOrNull() {
+        try {
+            return StpUtil.isLogin() ? StpUtil.getLoginIdAsString() : null;
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    private static String buildRagUserMessage(String question, List<KnowledgeCitation> citations) {
+        if (citations == null || citations.isEmpty()) {
+            return question;
+        }
+        StringBuilder sb = new StringBuilder();
+        sb.append("下面是知识库检索到的参考资料，请优先依据资料回答；资料不足时再结合通用知识，并说明不确定之处。\n\n");
+        for (int i = 0; i < citations.size(); i++) {
+            KnowledgeCitation c = citations.get(i);
+            sb.append("[").append(i + 1).append("] ");
+            if (c.getTitle() != null) {
+                sb.append(c.getTitle());
+            } else if (c.getFilename() != null) {
+                sb.append(c.getFilename());
+            } else {
+                sb.append("资料");
+            }
+            sb.append("\n").append(c.getSnippet() == null ? "" : c.getSnippet()).append("\n\n");
+        }
+        sb.append("用户问题：").append(question);
+        return sb.toString();
+    }
+
+    private static String buildCitationFooter(List<KnowledgeCitation> citations) {
+        StringBuilder sb = new StringBuilder("\n\n—— 参考文档：");
+        for (int i = 0; i < citations.size(); i++) {
+            KnowledgeCitation c = citations.get(i);
+            String name = c.getTitle() != null ? c.getTitle()
+                    : (c.getFilename() != null ? c.getFilename() : "未命名");
+            if (i > 0) {
+                sb.append("；");
+            }
+            sb.append(i + 1).append(". ").append(name);
+        }
+        return sb.toString();
     }
 
 
