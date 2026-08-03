@@ -118,6 +118,9 @@ app:
     enabled: ${REDIS_ENABLED:false}
     stop-key-prefix: "zhizhi:chat:stop:"
     stop-ttl-seconds: 600
+  # W2: Agent 产物受管存储（从 tmp 拷贝后供下载）
+  artifact:
+    file-dir: ${ARTIFACT_FILE_DIR:data/artifacts}
   # W2: 本地 VectorStore（SimpleVectorStore）知识库
   knowledge:
     file-dir: ${KNOWLEDGE_FILE_DIR:data/knowledge-files}

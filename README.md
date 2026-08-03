@@ -164,9 +164,9 @@ REDIS_PASSWORD=root
 | 用户认证 + 数据隔离 | Sa-Token JWT，按用户隔离会话 | **D4 完成** |
 | 会话 / 消息持久化 | MySQL + MyBatis-Plus CRUD；连库开关预留 | **D2 完成（待本地 MySQL）** |
 | 知识库可管理 | 上传、切片、VectorStore 检索、对话引用卡片 | **W2 D1–D3 完成** |
-| 工具治理 | 审计日志；危险工具审批 | 待做（W2–W3） |
+| 工具治理 | 审计日志；危险工具审批 | 审计 **W2 D5 完成**；审批待 W3 |
 | 真正取消任务 | 前端 abort + Redis 停止信号 + Agent 不再继续 step | **D5 完成** |
-| 产物可交付 | PDF/文件入库并可下载 | 待做（W2） |
+| 产物可交付 | PDF/文件入库并可下载 | **W2 D4 完成** |
 | 可观测 | TraceId、Token、耗时 | 待做（W3） |
 | 密钥与配置外置 | 环境变量 / `.env` | **已完成（D1）** |
 
@@ -348,6 +348,29 @@ mysql -uroot -p zhizhi_ai_agent < src/main/resources/db/tables/04_kb_document.sq
 
 前端：`/knowledge` 知识库管理页（需登录）；首页入口「知识库」。
 
+## W2 D4–D5：产物元数据 + 工具审计
+
+超级智能体（ZhizhiManus）在 `ToolCallAgent.act()` 执行工具后：
+
+1. **工具审计**：写入 `tool_audit_log`（userId / chatId / toolName / 入参摘要 / 结果摘要 / success / durationMs）
+2. **产物入库**：若工具为 `generatePDF` / `writeFile` / `downloadResource` 且结果含本地路径，则拷贝到 `data/artifacts/` 并写入 `artifact` 表
+
+启用前执行：
+
+```bash
+mysql -uroot -p zhizhi_ai_agent < src/main/resources/db/tables/05_artifact.sql
+mysql -uroot -p zhizhi_ai_agent < src/main/resources/db/tables/06_tool_audit_log.sql
+# 或重新执行完整 schema.sql
+```
+
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| GET | `/artifacts?chatId=` | 当前用户产物列表（可按会话筛） |
+| GET | `/artifacts/{id}/download` | 鉴权下载（`Content-Disposition: attachment`） |
+| GET | `/tool-audits?chatId=&limit=` | 工具调用审计列表 |
+
+前端：超级智能体右侧「产物」面板（宽屏常驻，窄屏点顶栏「产物」）；`tool_done` 后自动刷新。
+
 
 ## 进度追踪
 
@@ -360,7 +383,7 @@ mysql -uroot -p zhizhi_ai_agent < src/main/resources/db/tables/04_kb_document.sq
 | D5 Redis 停止信号 + Agent 可取消 + Docker Compose | ✅ 完成 |
 | W1 工程底盘 | ✅ 完成 |
 | W2 D1–D3 知识库（后端链路 + 前端页 + 引用卡片） | ✅ 完成 |
-| W2 产物 + 工具审计 | 待开始 |
+| W2 D4–D5 产物 + 工具审计 | ✅ 完成 |
 | W3 Workspace + HITL + MCP + Trace | 待开始 |
 | W4 Demo / 简历包装 | 待开始 |
 

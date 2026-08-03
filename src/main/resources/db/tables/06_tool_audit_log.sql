@@ -1,0 +1,21 @@
+CREATE TABLE IF NOT EXISTS tool_audit_log (
+    id                  CHAR(32)     NOT NULL PRIMARY KEY COMMENT '主键，32位字符串',
+    user_id             CHAR(32)     NULL COMMENT '调用用户ID',
+    chat_id             CHAR(32)     NULL COMMENT '关联会话 chatId',
+    tool_name           VARCHAR(64)  NOT NULL COMMENT '工具名',
+    arguments_summary   VARCHAR(1000) NULL COMMENT '入参摘要（截断）',
+    result_summary      VARCHAR(2000) NULL COMMENT '结果摘要（截断）',
+    success             TINYINT      NOT NULL DEFAULT 1 COMMENT '1=成功 0=失败',
+    duration_ms         BIGINT       NULL COMMENT '本批工具耗时毫秒',
+    create_date         DATETIME     NOT NULL COMMENT '创建时间',
+    create_by           VARCHAR(64)  NULL COMMENT '创建人',
+    update_date         DATETIME     NOT NULL COMMENT '更新时间',
+    update_by           VARCHAR(64)  NULL COMMENT '更新人',
+    is_del              TINYINT      NOT NULL DEFAULT 0 COMMENT '0=未删除 1=已删除',
+    enterprise_id       CHAR(32)     NULL COMMENT '企业/租户ID',
+    KEY idx_tool_audit_user_id (user_id),
+    KEY idx_tool_audit_chat_id (chat_id),
+    KEY idx_tool_audit_tool_name (tool_name),
+    KEY idx_tool_audit_create_date (create_date),
+    KEY idx_tool_audit_is_del (is_del)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='工具调用审计日志';

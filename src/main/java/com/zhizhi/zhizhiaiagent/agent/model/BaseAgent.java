@@ -2,6 +2,7 @@ package com.zhizhi.zhizhiaiagent.agent.model;
 
 import com.zhizhi.zhizhiaiagent.agent.model.enums.AgentStatus;
 import com.zhizhi.zhizhiaiagent.agent.model.exception.BusinessException;
+import com.zhizhi.zhizhiaiagent.agent.observability.AgentToolObservabilityService;
 import com.zhizhi.zhizhiaiagent.agent.stop.ChatStopSignalService;
 import lombok.Data;
 import lombok.extern.slf4j.Slf4j;
@@ -46,8 +47,12 @@ public abstract class BaseAgent {
     private List<Message> messageList = new ArrayList<>();
     /** 业务会话 ID（用于停止信号） */
     private String chatId;
+    /** 当前登录用户 ID（审计 / 产物） */
+    private String userId;
     /** 停止信号服务（由 Controller 注入） */
     private ChatStopSignalService stopSignalService;
+    /** 工具审计 + 产物入库（由 Controller 注入，MySQL 开启时可用） */
+    private AgentToolObservabilityService toolObservabilityService;
 
     /**
      * 同步执行 Agent：校验入参后循环调用 {@link #step()}，直到完成、取消或达到最大步数。

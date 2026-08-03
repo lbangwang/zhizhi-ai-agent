@@ -1,0 +1,21 @@
+CREATE TABLE IF NOT EXISTS artifact (
+    id              CHAR(32)     NOT NULL PRIMARY KEY COMMENT '主键，32位字符串',
+    user_id         CHAR(32)     NOT NULL COMMENT '所属用户ID',
+    chat_id         CHAR(32)     NULL COMMENT '关联会话 chatId',
+    tool_name       VARCHAR(64)  NULL COMMENT '产生该产物的工具名',
+    file_name       VARCHAR(256) NOT NULL COMMENT '文件名',
+    content_type    VARCHAR(128) NULL COMMENT 'MIME 类型',
+    file_path       VARCHAR(512) NOT NULL COMMENT '受管存储绝对/相对路径',
+    file_size       BIGINT       NULL COMMENT '字节大小',
+    source_path     VARCHAR(512) NULL COMMENT '工具原始输出路径',
+    create_date     DATETIME     NOT NULL COMMENT '创建时间',
+    create_by       VARCHAR(64)  NULL COMMENT '创建人',
+    update_date     DATETIME     NOT NULL COMMENT '更新时间',
+    update_by       VARCHAR(64)  NULL COMMENT '更新人',
+    is_del          TINYINT      NOT NULL DEFAULT 0 COMMENT '0=未删除 1=已删除',
+    enterprise_id   CHAR(32)     NULL COMMENT '企业/租户ID',
+    KEY idx_artifact_user_id (user_id),
+    KEY idx_artifact_chat_id (chat_id),
+    KEY idx_artifact_update_date (update_date),
+    KEY idx_artifact_is_del (is_del)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='Agent 产物元数据';

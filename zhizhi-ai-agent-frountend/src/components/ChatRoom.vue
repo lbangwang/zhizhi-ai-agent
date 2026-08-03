@@ -69,6 +69,15 @@
           </div>
           <span v-if="chatId" class="chat-id">会话 {{ shortId(chatId) }}</span>
         </div>
+        <button
+          v-if="stepMode"
+          class="artifacts-toggle"
+          type="button"
+          :aria-pressed="artifactsOpen"
+          @click="artifactsOpen = !artifactsOpen"
+        >
+          产物
+        </button>
       </header>
 
       <div ref="messagesRef" class="chat-messages">
@@ -289,6 +298,48 @@
         <p class="ai-disclaimer">内容由AI生成，请仔细斟酌</p>
       </div>
     </div>
+
+      <button
+        v-if="stepMode && artifactsOpen"
+        class="artifacts-backdrop"
+        type="button"
+        aria-label="关闭产物面板"
+        @click="artifactsOpen = false"
+      />
+
+      <aside v-if="stepMode" class="artifacts-sidebar" :class="{ open: artifactsOpen }">
+        <div class="sidebar-top">
+          <span class="sidebar-title">产物</span>
+          <button class="artifact-refresh-btn" type="button" :disabled="artifactsLoading" @click="refreshArtifacts">
+            刷新
+          </button>
+        </div>
+        <p v-if="artifactsError" class="sidebar-hint sidebar-error">{{ artifactsError }}</p>
+        <p v-else-if="artifactsLoading" class="sidebar-hint">加载中…</p>
+        <p v-else-if="artifacts.length === 0" class="sidebar-hint">
+          本会话暂无产物。生成 PDF / 写入文件 / 下载资源后会出现在这里。
+        </p>
+        <ul v-else class="artifact-list">
+          <li v-for="item in artifacts" :key="item.id" class="artifact-item">
+            <div class="artifact-meta">
+              <span class="artifact-name" :title="item.fileName">{{ item.fileName }}</span>
+              <span class="artifact-sub">
+                {{ toolLabel(item.toolName) }}
+                <template v-if="item.fileSize != null"> · {{ formatBytes(item.fileSize) }}</template>
+              </span>
+              <span v-if="item.createDate" class="artifact-time">{{ formatTime(item.createDate) }}</span>
+            </div>
+            <button
+              type="button"
+              class="artifact-download-btn"
+              :disabled="downloadingId === item.id"
+              @click="onDownloadArtifact(item)"
+            >
+              {{ downloadingId === item.id ? '…' : '下载' }}
+            </button>
+          </li>
+        </ul>
+      </aside>
     </div>
     <SiteFooter compact />
   </div>
@@ -308,6 +359,7 @@ import {
   listMessages,
   updateConversation,
 } from '../api/conversation.js'
+import { downloadArtifact, formatBytes, listArtifacts } from '../api/artifact.js'
 import { APP_AVATARS } from '../constants/apps.js'
 import { DEFAULT_MODEL, MODEL_OPTIONS } from '../constants/models.js'
 import { generateChatId } from '../utils/chatId.js'
@@ -442,10 +494,16 @@ const historyLoading = ref(false)
 const historyError = ref('')
 const sidebarOpen = ref(typeof window !== 'undefined' ? window.innerWidth >= 960 : true)
 const conversationReady = ref(false)
+const artifactsOpen = ref(typeof window !== 'undefined' ? window.innerWidth >= 1100 : true)
+const artifacts = ref([])
+const artifactsLoading = ref(false)
+const artifactsError = ref('')
+const downloadingId = ref('')
 let abortController = null
 let lastUserMessage = ''
 let stopping = false
 let copiedTimer = null
+let artifactsRefreshTimer = null
 
 function shortId(id) {
   if (!id) return ''
@@ -467,6 +525,50 @@ function titleFromText(text) {
   const t = (text || '').trim().replace(/\s+/g, ' ')
   if (!t) return '新对话'
   return t.length > 24 ? `${t.slice(0, 24)}…` : t
+}
+
+function toolLabel(name) {
+  const map = {
+    generatePDF: 'PDF',
+    writeFile: '文件',
+    downloadResource: '下载',
+  }
+  return map[name] || name || '工具'
+}
+
+async function refreshArtifacts() {
+  if (!props.stepMode || !chatId.value) return
+  artifactsLoading.value = true
+  artifactsError.value = ''
+  try {
+    const list = await listArtifacts({ chatId: chatId.value })
+    artifacts.value = Array.isArray(list) ? list : []
+  } catch (err) {
+    artifactsError.value = err.message || '产物加载失败'
+    artifacts.value = []
+  } finally {
+    artifactsLoading.value = false
+  }
+}
+
+function scheduleArtifactsRefresh() {
+  if (!props.stepMode) return
+  if (artifactsRefreshTimer) clearTimeout(artifactsRefreshTimer)
+  artifactsRefreshTimer = setTimeout(() => {
+    refreshArtifacts()
+  }, 600)
+}
+
+async function onDownloadArtifact(item) {
+  if (!item?.id) return
+  downloadingId.value = item.id
+  try {
+    await downloadArtifact(item.id, item.fileName)
+  } catch (err) {
+    artifactsError.value = err.message || '下载失败'
+  } finally {
+    downloadingId.value = ''
+  }
 }
 
 async function refreshConversations() {
@@ -645,6 +747,13 @@ async function persistAssistantReply(aiMsg) {
 
 onMounted(() => {
   refreshConversations()
+  if (props.stepMode) {
+    refreshArtifacts()
+  }
+})
+
+onUnmounted(() => {
+  if (artifactsRefreshTimer) clearTimeout(artifactsRefreshTimer)
 })
 
 function scrollToBottom() {
@@ -656,6 +765,12 @@ function scrollToBottom() {
 }
 
 watch(messages, scrollToBottom, { deep: true })
+
+watch(chatId, () => {
+  if (props.stepMode) {
+    refreshArtifacts()
+  }
+})
 
 async function copyUserMessage(content, index) {
   const text = (content || '').trim()
@@ -1075,6 +1190,7 @@ function handleAgentEvent(raw, aiIndex) {
       if (event.text) {
         enqueueThinkingText(msg, `✓ ${event.text}`, '\n')
       }
+      scheduleArtifactsRefresh()
       break
     case 'thinking_done':
       if (typeof event.elapsedMs === 'number') {
@@ -2255,7 +2371,7 @@ onUnmounted(() => {
   z-index: 1;
   display: flex;
   width: 100%;
-  max-width: 1100px;
+  max-width: 1280px;
   height: calc(100dvh - 88px - var(--safe-top) - var(--safe-bottom));
   max-height: 780px;
   gap: 0;
@@ -2410,6 +2526,112 @@ onUnmounted(() => {
   animation: none;
 }
 
+.chat-layout:has(.artifacts-sidebar) .chat-room {
+  border-radius: 0;
+}
+
+.artifacts-sidebar {
+  display: flex;
+  flex-direction: column;
+  width: 260px;
+  flex-shrink: 0;
+  background: rgba(255, 255, 255, 0.78);
+  backdrop-filter: blur(16px);
+  border: 1px solid rgba(255, 255, 255, 0.7);
+  border-left: none;
+  border-radius: 0 var(--radius-lg) var(--radius-lg) 0;
+  overflow: hidden;
+}
+
+.artifact-refresh-btn,
+.artifacts-toggle {
+  flex-shrink: 0;
+  min-height: 36px;
+  padding: 6px 12px;
+  border: 1px solid var(--color-border);
+  border-radius: 999px;
+  background: var(--color-surface-soft);
+  color: var(--color-text-secondary);
+  cursor: pointer;
+  font-size: 13px;
+}
+
+.artifact-refresh-btn {
+  min-height: 28px;
+  padding: 4px 10px;
+  font-size: 12px;
+}
+
+.artifact-refresh-btn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.artifact-list {
+  list-style: none;
+  margin: 0;
+  padding: 8px;
+  overflow-y: auto;
+  flex: 1;
+}
+
+.artifact-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px;
+  margin-bottom: 6px;
+  border-radius: 10px;
+  background: rgba(15, 28, 46, 0.03);
+}
+
+.artifact-meta {
+  flex: 1;
+  min-width: 0;
+}
+
+.artifact-name {
+  display: block;
+  font-size: 13px;
+  color: var(--color-ink);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.artifact-sub,
+.artifact-time {
+  display: block;
+  margin-top: 2px;
+  font-size: 11px;
+  color: var(--color-text-muted);
+}
+
+.artifact-download-btn {
+  flex-shrink: 0;
+  border: 1px solid var(--accent);
+  background: var(--accent-soft);
+  color: var(--accent);
+  border-radius: 999px;
+  padding: 4px 10px;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.artifact-download-btn:hover:not(:disabled) {
+  background: var(--accent);
+  color: #fff;
+}
+
+.artifact-download-btn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.artifacts-backdrop {
+  display: none;
+}
+
 @media (max-width: 959px) {
   .history-sidebar {
     position: absolute;
@@ -2441,8 +2663,42 @@ onUnmounted(() => {
   }
 }
 
+@media (max-width: 1099px) {
+  .artifacts-sidebar {
+    position: absolute;
+    right: 0;
+    top: 0;
+    bottom: 0;
+    z-index: 5;
+    border-radius: 0 var(--radius-lg) var(--radius-lg) 0;
+    transform: translateX(105%);
+    transition: transform 0.22s ease;
+    box-shadow: var(--shadow-card);
+    border-left: 1px solid rgba(255, 255, 255, 0.7);
+  }
+
+  .artifacts-sidebar.open {
+    transform: translateX(0);
+  }
+
+  .artifacts-backdrop {
+    display: block;
+    position: absolute;
+    inset: 0;
+    z-index: 4;
+    border: none;
+    background: rgba(15, 28, 46, 0.28);
+  }
+}
+
 @media (min-width: 960px) {
   .history-toggle {
+    display: none;
+  }
+}
+
+@media (min-width: 1100px) {
+  .artifacts-toggle {
     display: none;
   }
 }

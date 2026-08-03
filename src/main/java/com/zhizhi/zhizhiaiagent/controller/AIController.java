@@ -1,7 +1,9 @@
 package com.zhizhi.zhizhiaiagent.controller;
 
+import cn.dev33.satoken.stp.StpUtil;
 import com.zhizhi.zhizhiaiagent.agent.model.ZhizhiManus;
 import com.zhizhi.zhizhiaiagent.agent.model.enums.AgentType;
+import com.zhizhi.zhizhiaiagent.agent.observability.AgentToolObservabilityService;
 import com.zhizhi.zhizhiaiagent.agent.stop.ChatStopSignalService;
 import com.zhizhi.zhizhiaiagent.app.LoveApp;
 import com.zhizhi.zhizhiaiagent.config.ChatModelRouter;
@@ -43,6 +45,9 @@ public class AIController {
 
     @Autowired
     private ChatStopSignalService chatStopSignalService;
+
+    @Autowired(required = false)
+    private AgentToolObservabilityService toolObservabilityService;
 
     @GetMapping("/doChatBySyn")
     public String doChatBySyn(String message, String chatId,
@@ -88,12 +93,23 @@ public class AIController {
             // 提示词增强：重写用户问题后再交给超级智能体
             String enhancedMessage = myQueryTransformer.rewriteUserMessage(message, chatModel);
             ZhizhiManus zhizhiManus = new ZhizhiManus(toolCallbacks, chatModel,
-                    chatModelRouter.resolveChatOptions(model));
+                    chatModelRouter.resolveChatOptions(model),chatId);
             //第一次打开对话框，清除停止信号对应key，并把停止service传入后续步骤
             if (StringUtils.hasText(chatId)) {
                 chatStopSignalService.clear(chatId);
                 zhizhiManus.setChatId(chatId.trim());
                 zhizhiManus.setStopSignalService(chatStopSignalService);
+            }
+            // 传入：工具审计 / 产物入库需要参数userId、service
+            try {
+                if (StpUtil.isLogin()) {
+                    zhizhiManus.setUserId(StpUtil.getLoginIdAsString());
+                }
+            } catch (Exception ignored) {
+                // Sa-Token 未启用时忽略
+            }
+            if (toolObservabilityService != null) {
+                zhizhiManus.setToolObservabilityService(toolObservabilityService);
             }
             log.info("ZhizhiManus using model={}, chatId={}", model, chatId);
             return zhizhiManus.runStream(enhancedMessage);

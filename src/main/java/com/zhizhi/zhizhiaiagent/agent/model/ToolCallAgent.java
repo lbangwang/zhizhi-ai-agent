@@ -20,6 +20,7 @@ import org.springframework.ai.tool.ToolCallback;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Objects;
 import java.util.stream.Collectors;
 
 /**
@@ -159,8 +160,10 @@ public class ToolCallAgent extends ReActAgent {
         }
 
         Prompt prompt = new Prompt(getMessageList(), chatOptions);
+        long startedAt = System.currentTimeMillis();
         ToolExecutionResult executionResult =
                 toolCallingManager.executeToolCalls(prompt, toolCallChatResponse);
+        long durationMs = System.currentTimeMillis() - startedAt;
         setMessageList(executionResult.conversationHistory());
 
         ToolResponseMessage toolResponseMessage =
@@ -176,6 +179,22 @@ public class ToolCallAgent extends ReActAgent {
         }
         this.lastToolNames = toolNames;
         this.lastActDisplayText = String.join("\n", displayLines);
+
+        // 保存工具产物：工具审计 + 产物入库
+        if (!Objects.isNull(getToolObservabilityService())) {
+            try {
+                List<AssistantMessage.ToolCall> toolCalls =
+                        toolCallChatResponse.getResult().getOutput().getToolCalls();
+                getToolObservabilityService().afterToolBatch(
+                        getUserId(),
+                        getChatId(),
+                        toolCalls,
+                        toolResponseMessage.getResponses(),
+                        durationMs);
+            } catch (Exception e) {
+                log.warn("tool observability failed: {}", e.getMessage());
+            }
+        }
 
         boolean terminated = toolResponseMessage.getResponses().stream()
                 .anyMatch(response -> TERMINATE_TOOL_NAME.equals(response.name()));
