@@ -201,7 +201,7 @@ MCP（工具扩展）
 结构化日志 / Trace（Micrometer 或自建表）
 ```
 
-### 当前已落地架构（面试可画）
+### 当前已落地架构
 
 ```mermaid
 flowchart TB
