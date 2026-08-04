@@ -54,16 +54,16 @@ spring:
       chat:
         model: ${OLLAMA_MODEL:qwen3.5:0.8b}
 
-
-#    远程部署暂时注释
-#    mcp:
-#      client:
+    # W3 D4：MCP Client（默认关；MCP_ENABLED=true 且已打包 image-search jar 后开启）
+    mcp:
+      client:
+        enabled: ${MCP_ENABLED:false}
+        stdio:
+          servers-configuration: classpath:mcp-servers.json
 #        sse:
 #          connections:
 #            server1:
 #              url: http://localhost:8127
-##        stdio:
-#          servers-configuration: classpath:mcp-servers.json
 server:
   port: ${SERVER_PORT:8123}
   servlet:
@@ -121,6 +121,13 @@ app:
   # W2: Agent 产物受管存储（从 tmp 拷贝后供下载）
   artifact:
     file-dir: ${ARTIFACT_FILE_DIR:data/artifacts}
+  # W3: HITL / MCP / Pexels
+  hitl:
+    timeout-seconds: ${HITL_TIMEOUT_SECONDS:120}
+  mcp:
+    merge-tools: ${MCP_MERGE_TOOLS:true}
+  pexels:
+    api-key: ${PEXELS_API_KEY:}
   # W2: 本地 VectorStore（SimpleVectorStore）知识库
   knowledge:
     file-dir: ${KNOWLEDGE_FILE_DIR:data/knowledge-files}

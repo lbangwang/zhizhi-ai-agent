@@ -30,7 +30,8 @@ public final class AgentUserFacingFormatter {
             Map.entry("writeFile", "写入文件"),
             Map.entry("executeTerminalCommand", "终端命令"),
             Map.entry("generatePDF", "生成 PDF"),
-            Map.entry("doTerminate", "结束任务")
+            Map.entry("doTerminate", "结束任务"),
+            Map.entry("searchImage", "图片搜索")
     );
 
     private AgentUserFacingFormatter() {
@@ -48,6 +49,56 @@ public final class AgentUserFacingFormatter {
         }
         String label = TOOL_LABELS.get(toolName);
         return label != null ? label : toolName;
+    }
+
+    /**
+     * tool_done 展示文案：区分 HITL 拒绝 / 执行失败 / 成功。
+     */
+    public static String toolDoneSummary(String toolName, String rawResult) {
+        String label = toolLabel(toolName);
+        String data = normalizeToolResult(rawResult);
+        if (!StringUtils.isNotBlank(data)) {
+            // 无结果时不能默认「已完成」（HITL 拒绝场景曾因此误标）
+            return label + " 已结束";
+        }
+        String lower = data.toLowerCase(Locale.ROOT);
+        if (data.contains("用户拒绝")
+                || (data.contains("未执行") && (data.contains("危险工具") || data.contains("人机确认")))) {
+            return label + " 已拒绝";
+        }
+        if (data.contains("确认超时") || lower.contains("timeout")) {
+            return label + " 已超时";
+        }
+        if (lower.startsWith("error")
+                || lower.contains("exception")
+                || data.startsWith("Error")
+                || data.contains("失败")) {
+            return label + " 失败";
+        }
+        if (lower.contains("successfully") || data.contains("成功")) {
+            return label + " 已完成";
+        }
+        // 有返回但非明确成功：偏保守标为已结束，避免误报成功
+        return label + " 已结束";
+    }
+
+    public static boolean isHitlRejectedResult(String rawResult) {
+        String data = normalizeToolResult(rawResult);
+        return StringUtils.isNotBlank(data)
+                && (data.contains("用户拒绝")
+                || (data.contains("未执行") && data.contains("危险工具")));
+    }
+
+    private static String normalizeToolResult(String rawResult) {
+        if (!StringUtils.isNotBlank(rawResult)) {
+            return "";
+        }
+        String data = rawResult.trim();
+        // Spring AI 结果可能带 JSON 字符串引号
+        while (data.length() >= 2 && data.startsWith("\"") && data.endsWith("\"")) {
+            data = data.substring(1, data.length() - 1).trim();
+        }
+        return data;
     }
 
     /**
@@ -120,9 +171,23 @@ public final class AgentUserFacingFormatter {
     public static String toToolResultDisplay(String toolName, String responseData) {
         String label = toolLabel(toolName);
         if (StringUtils.isBlank(responseData)) {
-            return "已完成「" + label + "」，暂无有效结果。";
+            return "「" + label + "」已结束，暂无有效结果。";
         }
-        String data = responseData.trim();
+        String data = normalizeToolResult(responseData);
+        // HITL 拒绝 / 超时：绝不能写成「已完成」，否则计划面板会被误导
+        if (isHitlRejectedResult(data)) {
+            return "「" + label + "」未执行（用户拒绝）。";
+        }
+        if (data.contains("确认超时") || data.toLowerCase(Locale.ROOT).contains("timeout")) {
+            return "「" + label + "」未执行（确认超时）。";
+        }
+        if (data.startsWith("Error") || data.toLowerCase(Locale.ROOT).startsWith("error")) {
+            String plain = data.replaceAll("\\s+", " ").trim();
+            if (plain.length() > 120) {
+                plain = plain.substring(0, 120) + "…";
+            }
+            return truncate("「" + label + "」执行失败：" + plain, MAX_TOOL_SUMMARY_CHARS);
+        }
         // 常见：searchWeb 返回 JSON 数组字符串
         if (data.startsWith("[") || data.startsWith("{")) {
             try {

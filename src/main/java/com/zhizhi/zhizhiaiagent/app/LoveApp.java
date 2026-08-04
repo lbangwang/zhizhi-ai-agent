@@ -174,10 +174,13 @@ public class LoveApp {
     }
 
 
-    @Autowired
+    @Autowired(required = false)
     private ToolCallbackProvider toolCallbackProvider;
 
     public String doChatWithMcp(String message, String chatId) {
+        if (toolCallbackProvider == null) {
+            throw new IllegalStateException("MCP 未启用，请设置 MCP_ENABLED=true 并启动 MCP Server");
+        }
         ChatResponse response = chatClient
                 .prompt()
                 .user(message)
@@ -203,7 +206,7 @@ public class LoveApp {
 //    private List<McpAsyncClient> mcpAsyncClients;
 
     // 和 Spring AI 的工具进行整合
-    @Autowired
+    @Autowired(required = false)
     private SyncMcpToolCallbackProvider syncMcpToolCallbackProvider;
 
     @Autowired
@@ -219,6 +222,9 @@ public class LoveApp {
     private boolean cloudRagEnabled;
 
     public String doChatWithMcpTest(String message, String chatId) {
+        if (syncMcpToolCallbackProvider == null) {
+            throw new IllegalStateException("MCP 未启用，请设置 MCP_ENABLED=true 并启动 MCP Server");
+        }
         ToolCallback[] toolCallbackProviderToolCallbacks = syncMcpToolCallbackProvider.getToolCallbacks();
         ChatResponse response = chatClient
                 .prompt()
@@ -307,10 +313,12 @@ public class LoveApp {
         if (cloudRagEnabled && chatModelRouter.isQwen(model)) {
             promptSpec = promptSpec.advisors(loveAppRagCloudAdvisor);
         }
-        Flux<String> contentFlux = promptSpec
-                .tools(toolCallbackProvider)
-                .stream()
-                .content();
+        Flux<String> contentFlux;
+        if (toolCallbackProvider != null) {
+            contentFlux = promptSpec.tools(toolCallbackProvider).stream().content();
+        } else {
+            contentFlux = promptSpec.tools(toolCallbacks).stream().content();
+        }
 
         Flux<String> withCitations = citations.isEmpty()
                 ? contentFlux

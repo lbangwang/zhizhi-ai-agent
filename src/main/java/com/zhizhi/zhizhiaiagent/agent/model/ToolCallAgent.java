@@ -58,6 +58,8 @@ public class ToolCallAgent extends ReActAgent {
     private String lastActDisplayText = "";
     /** 最近计划/执行的工具名 */
     private List<String> lastToolNames = new ArrayList<>();
+    /** 最近工具原始结果（与 lastToolNames 同序，供 tool_done 区分拒绝/失败） */
+    private List<String> lastToolRawResults = new ArrayList<>();
 
     /**
      * 使用默认 DashScope 工具代理选项构造 Agent。
@@ -102,6 +104,12 @@ public class ToolCallAgent extends ReActAgent {
                     .call()
                     .chatResponse();
             this.toolCallChatResponse = chatResponse;
+
+            //设置token消耗
+            if (!Objects.isNull(chatResponse.getMetadata())  && !Objects.isNull(chatResponse.getMetadata().getUsage())) {
+                var usage = chatResponse.getMetadata().getUsage();
+                accumulateUsage(usage.getPromptTokens(), usage.getCompletionTokens());
+            }
 
             AssistantMessage assistantMessage = chatResponse.getResult().getOutput();
             String modelText = assistantMessage.getText();
@@ -170,14 +178,17 @@ public class ToolCallAgent extends ReActAgent {
                 (ToolResponseMessage) CollUtil.getLast(executionResult.conversationHistory());
         List<String> displayLines = new ArrayList<>();
         List<String> toolNames = new ArrayList<>();
+        List<String> rawResults = new ArrayList<>();
         for (ToolResponseMessage.ToolResponse response : toolResponseMessage.getResponses()) {
             toolNames.add(response.name());
+            rawResults.add(response.responseData());
             displayLines.add(AgentUserFacingFormatter.toToolResultDisplay(
                     response.name(), response.responseData()));
             int rawLen = response.responseData() == null ? 0 : response.responseData().length();
             log.info("tool {} raw length={}", response.name(), rawLen);
         }
         this.lastToolNames = toolNames;
+        this.lastToolRawResults = rawResults;
         this.lastActDisplayText = String.join("\n", displayLines);
 
         // 保存工具产物：工具审计 + 产物入库
@@ -219,6 +230,10 @@ public class ToolCallAgent extends ReActAgent {
                     .system(getSystemPrompt())
                     .call()
                     .chatResponse();
+            if (response.getMetadata() != null && response.getMetadata().getUsage() != null) {
+                var usage = response.getMetadata().getUsage();
+                accumulateUsage(usage.getPromptTokens(), usage.getCompletionTokens());
+            }
             AssistantMessage assistantMessage = response.getResult().getOutput();
             getMessageList().add(assistantMessage);
             this.lastThinkText = "正在整理最终回答…";
@@ -246,5 +261,9 @@ public class ToolCallAgent extends ReActAgent {
      */
     public String getLastActDisplayText() {
         return lastActDisplayText == null ? "" : lastActDisplayText;
+    }
+
+    public List<String> getLastToolRawResults() {
+        return lastToolRawResults == null ? List.of() : lastToolRawResults;
     }
 }

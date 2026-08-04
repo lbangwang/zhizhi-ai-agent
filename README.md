@@ -164,10 +164,10 @@ REDIS_PASSWORD=root
 | 用户认证 + 数据隔离 | Sa-Token JWT，按用户隔离会话 | **D4 完成** |
 | 会话 / 消息持久化 | MySQL + MyBatis-Plus CRUD；连库开关预留 | **D2 完成（待本地 MySQL）** |
 | 知识库可管理 | 上传、切片、VectorStore 检索、对话引用卡片 | **W2 D1–D3 完成** |
-| 工具治理 | 审计日志；危险工具审批 | 审计 **W2 D5 完成**；审批待 W3 |
+| 工具治理 | 审计日志；危险工具审批 | 审计 **W2**；HITL **W3 D3 完成** |
 | 真正取消任务 | 前端 abort + Redis 停止信号 + Agent 不再继续 step | **D5 完成** |
 | 产物可交付 | PDF/文件入库并可下载 | **W2 D4 完成** |
-| 可观测 | TraceId、Token、耗时 | 待做（W3） |
+| 可观测 | TraceId、Token、耗时 | **W3 D5 完成** |
 | 密钥与配置外置 | 环境变量 / `.env` | **已完成（D1）** |
 
 ### 加分（做 2～3 个即可）
@@ -371,6 +371,50 @@ mysql -uroot -p zhizhi_ai_agent < src/main/resources/db/tables/06_tool_audit_log
 
 前端：超级智能体右侧「产物」面板（宽屏常驻，窄屏点顶栏「产物」）；`tool_done` 后自动刷新。
 
+## W3：Workspace + HITL + MCP + Trace
+
+### Workspace（D1–D2）
+
+路由 `/workspace`：三栏 **历史 | 对话+思考 | 计划/产物**（右侧 Tab 切换）。首页入口「Agent Workspace」。
+
+### HITL 危险工具审批（D3）
+
+对 `executeTerminalCommand` / `writeFile`：执行前 SSE 推送 `hitl_required`，前端弹窗；调用：
+
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| POST | `/hitl/{approvalId}/approve` | 允许执行 |
+| POST | `/hitl/{approvalId}/reject` | 拒绝执行 |
+
+超时默认 120s（`HITL_TIMEOUT_SECONDS`）。
+
+### MCP 图片搜索（D4）
+
+- 模块：`zhizhi-image-search-mcp`（可独立 SSE/stdio 启动）
+- 主应用：`MCP_ENABLED=true` 时合并 MCP 工具到 Manus；未开启时可用本地 `ImageSearchTool`（需 `PEXELS_API_KEY`）
+
+```bash
+# 可选：打包并启用 MCP Client
+cd zhizhi-image-search-mcp && ../mvnw -q -DskipTests package
+# .env: MCP_ENABLED=true
+```
+
+### Trace（D5）
+
+表 `agent_trace`；每次 Manus 任务生成 TraceId，累计 Token/耗时/步数。
+
+```bash
+mysql -uroot -p zhizhi_ai_agent < src/main/resources/db/tables/07_agent_trace.sql
+```
+
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| GET | `/traces` | 最近任务列表 |
+| GET | `/traces/{traceId}` | 详情 |
+| GET | `/traces/stats/summary` | 极简统计 |
+
+前端：`/trace` 统计页。
+
 
 ## 进度追踪
 
@@ -384,7 +428,7 @@ mysql -uroot -p zhizhi_ai_agent < src/main/resources/db/tables/06_tool_audit_log
 | W1 工程底盘 | ✅ 完成 |
 | W2 D1–D3 知识库（后端链路 + 前端页 + 引用卡片） | ✅ 完成 |
 | W2 D4–D5 产物 + 工具审计 | ✅ 完成 |
-| W3 Workspace + HITL + MCP + Trace | 待开始 |
+| W3 Workspace + HITL + MCP + Trace | ✅ 完成 |
 | W4 Demo / 简历包装 | 待开始 |
 
 ---

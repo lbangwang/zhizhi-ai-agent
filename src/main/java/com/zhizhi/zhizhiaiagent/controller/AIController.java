@@ -8,6 +8,7 @@ import com.zhizhi.zhizhiaiagent.agent.stop.ChatStopSignalService;
 import com.zhizhi.zhizhiaiagent.app.LoveApp;
 import com.zhizhi.zhizhiaiagent.config.ChatModelRouter;
 import com.zhizhi.zhizhiaiagent.demo.rag.MyQueryTransformer;
+import com.zhizhi.zhizhiaiagent.persistence.service.AgentTraceService;
 import jakarta.annotation.Resource;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.ai.chat.model.ChatModel;
@@ -24,6 +25,7 @@ import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 import reactor.core.publisher.Flux;
 
 import java.io.IOException;
+import java.util.Objects;
 
 @RestController
 @Slf4j
@@ -48,6 +50,9 @@ public class AIController {
 
     @Autowired(required = false)
     private AgentToolObservabilityService toolObservabilityService;
+
+    @Autowired(required = false)
+    private AgentTraceService agentTraceService;
 
     @GetMapping("/doChatBySyn")
     public String doChatBySyn(String message, String chatId,
@@ -108,8 +113,13 @@ public class AIController {
             } catch (Exception ignored) {
                 // Sa-Token 未启用时忽略
             }
-            if (toolObservabilityService != null) {
+            if (!Objects.isNull(toolObservabilityService)) {
                 zhizhiManus.setToolObservabilityService(toolObservabilityService);
+            }
+            // 添加：链路追踪需要参数智能体类型、service
+            if (!Objects.isNull(agentTraceService)) {
+                zhizhiManus.setAgentTraceService(agentTraceService);
+                zhizhiManus.setAgentType("SUPER_AGENT");
             }
             log.info("ZhizhiManus using model={}, chatId={}", model, chatId);
             return zhizhiManus.runStream(enhancedMessage);

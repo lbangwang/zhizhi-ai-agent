@@ -1,9 +1,12 @@
 package com.zhizhi.zhizhiaiagent.agent.model;
 
+import com.zhizhi.zhizhiaiagent.agent.hitl.HitlContext;
+import com.zhizhi.zhizhiaiagent.agent.hitl.HitlDecisionTracker;
 import com.zhizhi.zhizhiaiagent.agent.model.enums.AgentStatus;
 import com.zhizhi.zhizhiaiagent.agent.model.exception.BusinessException;
 import com.zhizhi.zhizhiaiagent.agent.observability.AgentToolObservabilityService;
 import com.zhizhi.zhizhiaiagent.agent.stop.ChatStopSignalService;
+import com.zhizhi.zhizhiaiagent.persistence.service.AgentTraceService;
 import lombok.Data;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.StringUtils;
@@ -15,6 +18,7 @@ import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Objects;
 import java.util.concurrent.CompletableFuture;
 
 /**
@@ -53,6 +57,15 @@ public abstract class BaseAgent {
     private ChatStopSignalService stopSignalService;
     /** 工具审计 + 产物入库（由 Controller 注入，MySQL 开启时可用） */
     private AgentToolObservabilityService toolObservabilityService;
+    /** Trace 落库（由 Controller 注入，MySQL 开启时可用） */
+    private AgentTraceService agentTraceService;
+    /** 本轮任务 TraceId */
+    private String traceId;
+    /** 智能体类型标签（SUPER_AGENT 等） */
+    private String agentType = "SUPER_AGENT";
+    /** 累计 prompt/completion token（由 think 等调用累加） */
+    private int accumulatedPromptTokens;
+    private int accumulatedCompletionTokens;
 
     /**
      * 同步执行 Agent：校验入参后循环调用 {@link #step()}，直到完成、取消或达到最大步数。
@@ -152,9 +165,23 @@ public abstract class BaseAgent {
 
         this.status = AgentStatus.RUNNING;
         this.messageList.add(new UserMessage(userPrompt));
+        this.accumulatedPromptTokens = 0;
+        this.accumulatedCompletionTokens = 0;
 
+        String runStatus = "SUCCESS";
+        String errorMessage = null;
+        long thinkingStartedAt = System.currentTimeMillis();
         try {
-            long thinkingStartedAt = System.currentTimeMillis();
+            //初始化链路追踪信息，并落入数据库
+            if (!Objects.isNull(agentTraceService)) {
+                try {
+                    this.traceId = agentTraceService.start(userId, chatId, agentType);
+                    sseEmitter.send(AgentStreamEvent.traceMeta(this.traceId));
+                } catch (Exception e) {
+                    log.warn("start trace failed: {}", e.getMessage());
+                }
+            }
+
             sseEmitter.send(AgentStreamEvent.thinkingStart());
 
             String finalAnswer = null;
@@ -192,6 +219,7 @@ public abstract class BaseAgent {
             long elapsedMs = System.currentTimeMillis() - thinkingStartedAt;
 
             if (this.status == AgentStatus.CANCELLED) {
+                runStatus = "CANCELLED";
                 sseEmitter.send(AgentStreamEvent.cancelled(STOPPED_ANSWER));
                 sseEmitter.send(AgentStreamEvent.thinkingDone(null, elapsedMs));
                 sseEmitter.send(AgentStreamEvent.answerDone(STOPPED_ANSWER));
@@ -224,11 +252,38 @@ public abstract class BaseAgent {
             sseEmitter.complete();
         } catch (Exception e) {
             this.status = AgentStatus.ERROR;
+            runStatus = "ERROR";
+            errorMessage = e.getMessage();
             log.error("模型运行异常", e);
             sseEmitter.send(AgentStreamEvent.error("模型运行异常：" + e.getMessage()));
             sseEmitter.complete();
         } finally {
+            finishTrace(runStatus, System.currentTimeMillis() - thinkingStartedAt, errorMessage);
             this.cleanup();
+        }
+    }
+
+    private void finishTrace(String status, long durationMs, String errorMessage) {
+        if (agentTraceService == null || StringUtils.isBlank(traceId)) {
+            return;
+        }
+        try {
+            if (accumulatedPromptTokens > 0 || accumulatedCompletionTokens > 0) {
+                agentTraceService.addTokens(traceId, accumulatedPromptTokens, accumulatedCompletionTokens);
+            }
+            agentTraceService.finish(traceId, status, durationMs, Math.max(0, currentStep), errorMessage);
+        } catch (Exception e) {
+            log.warn("finish trace failed: {}", e.getMessage());
+        }
+    }
+
+    /** 累加模型 Usage（由 think/synthesize 调用）。 */
+    public void accumulateUsage(Integer promptTokens, Integer completionTokens) {
+        if (promptTokens != null) {
+            this.accumulatedPromptTokens += promptTokens;
+        }
+        if (completionTokens != null) {
+            this.accumulatedCompletionTokens += completionTokens;
         }
     }
 
@@ -287,21 +342,63 @@ public abstract class BaseAgent {
         // 执行工具并推送用户可读摘要
         sseEmitter.send(AgentStreamEvent.thinkingProgress(
                 this.currentStep, this.maxSteps, "正在调用工具…"));
-        String actSummary = reActAgent.act();
+        HitlContext.set(getChatId(), getUserId(), event -> {
+            try {
+                sseEmitter.send(event);
+            } catch (IOException e) {
+                throw new RuntimeException(e);
+            }
+        });
+        HitlDecisionTracker.clear();
+        String actSummary;
+        try {
+            actSummary = reActAgent.act();
+        } finally {
+            HitlContext.clear();
+        }
         if (reActAgent instanceof ToolCallAgent toolCallAgent
-                && StringUtils.isNotBlank(toolCallAgent.getLastActDisplayText())) {
-            sseEmitter.send(AgentStreamEvent.thinkingDelta(
-                    this.currentStep, toolCallAgent.getLastActDisplayText()));
-            for (String toolName : toolCallAgent.getLastToolNames()) {
+                && (StringUtils.isNotBlank(toolCallAgent.getLastActDisplayText())
+                || !toolCallAgent.getLastToolNames().isEmpty())) {
+            if (StringUtils.isNotBlank(toolCallAgent.getLastActDisplayText())) {
+                sseEmitter.send(AgentStreamEvent.thinkingDelta(
+                        this.currentStep, toolCallAgent.getLastActDisplayText()));
+            }
+            List<String> names = toolCallAgent.getLastToolNames();
+            List<String> raws = toolCallAgent.getLastToolRawResults();
+            for (int i = 0; i < names.size(); i++) {
+                String toolName = names.get(i);
+                String raw = i < raws.size() ? raws.get(i) : null;
+                if (!StringUtils.isNotBlank(raw)
+                        && StringUtils.isNotBlank(toolCallAgent.getLastActDisplayText())) {
+                    raw = toolCallAgent.getLastActDisplayText();
+                }
+                boolean rejected = HitlDecisionTracker.wasRejected(toolName)
+                        || AgentUserFacingFormatter.isHitlRejectedResult(raw);
+                String summary = rejected
+                        ? AgentUserFacingFormatter.toolLabel(toolName) + " 已拒绝"
+                        : AgentUserFacingFormatter.toolDoneSummary(toolName, raw);
+                // 必须以摘要文案为准，避免 ThreadLocal 丢失时误标 success
+                String outcome;
+                if (rejected || summary.endsWith("已拒绝")) {
+                    outcome = "rejected";
+                } else if (summary.endsWith("已超时")) {
+                    outcome = "timeout";
+                } else if (summary.endsWith("失败") || summary.endsWith("已结束")) {
+                    outcome = "failed";
+                } else {
+                    outcome = "success";
+                }
+                log.info("tool_done tool={}, outcome={}, summary={}, rawPrefix={}",
+                        toolName, outcome, summary,
+                        raw == null ? "null" : raw.substring(0, Math.min(80, raw.length())));
                 sseEmitter.send(AgentStreamEvent.toolDone(
-                        this.currentStep,
-                        toolName,
-                        AgentUserFacingFormatter.toolLabel(toolName) + " 已完成"));
+                        this.currentStep, toolName, summary, outcome));
             }
         } else if (StringUtils.isNotBlank(actSummary)
                 && !AgentUserFacingFormatter.looksLikeRawToolDump(actSummary)) {
             sseEmitter.send(AgentStreamEvent.thinkingDelta(this.currentStep, actSummary));
         }
+        HitlDecisionTracker.clear();
 
         // terminate：工具摘要不能当作最终答案，需再综合一轮
         if (this.status == AgentStatus.FINISHED) {

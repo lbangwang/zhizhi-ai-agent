@@ -309,38 +309,100 @@
 
       <aside v-if="stepMode" class="artifacts-sidebar" :class="{ open: artifactsOpen }">
         <div class="sidebar-top">
-          <span class="sidebar-title">产物</span>
-          <button class="artifact-refresh-btn" type="button" :disabled="artifactsLoading" @click="refreshArtifacts">
+          <div class="right-tabs" v-if="workspaceMode">
+            <button
+              type="button"
+              :class="['right-tab', { active: rightTab === 'plan' }]"
+              @click="rightTab = 'plan'"
+            >
+              计划
+            </button>
+            <button
+              type="button"
+              :class="['right-tab', { active: rightTab === 'artifacts' }]"
+              @click="rightTab = 'artifacts'"
+            >
+              产物
+            </button>
+          </div>
+          <span v-else class="sidebar-title">产物</span>
+          <button
+            v-if="!workspaceMode || rightTab === 'artifacts'"
+            class="artifact-refresh-btn"
+            type="button"
+            :disabled="artifactsLoading"
+            @click="refreshArtifacts"
+          >
             刷新
           </button>
         </div>
-        <p v-if="artifactsError" class="sidebar-hint sidebar-error">{{ artifactsError }}</p>
-        <p v-else-if="artifactsLoading" class="sidebar-hint">加载中…</p>
-        <p v-else-if="artifacts.length === 0" class="sidebar-hint">
-          本会话暂无产物。生成 PDF / 写入文件 / 下载资源后会出现在这里。
-        </p>
-        <ul v-else class="artifact-list">
-          <li v-for="item in artifacts" :key="item.id" class="artifact-item">
-            <div class="artifact-meta">
-              <span class="artifact-name" :title="item.fileName">{{ item.fileName }}</span>
-              <span class="artifact-sub">
-                {{ toolLabel(item.toolName) }}
-                <template v-if="item.fileSize != null"> · {{ formatBytes(item.fileSize) }}</template>
-              </span>
-              <span v-if="item.createDate" class="artifact-time">{{ formatTime(item.createDate) }}</span>
-            </div>
-            <button
-              type="button"
-              class="artifact-download-btn"
-              :disabled="downloadingId === item.id"
-              @click="onDownloadArtifact(item)"
-            >
-              {{ downloadingId === item.id ? '…' : '下载' }}
-            </button>
-          </li>
-        </ul>
+
+        <template v-if="workspaceMode && rightTab === 'plan'">
+          <p v-if="planItems.length === 0" class="sidebar-hint">
+            任务步骤会显示在这里（工具计划 / 完成状态）。
+          </p>
+          <ol v-else class="plan-list">
+            <li v-for="(item, idx) in planItems" :key="idx" :class="['plan-item', item.status]">
+              <span class="plan-idx">{{ idx + 1 }}</span>
+              <div class="plan-body">
+                <span class="plan-title">{{ item.title }}</span>
+                <span v-if="item.detail" class="plan-detail">{{ item.detail }}</span>
+              </div>
+            </li>
+          </ol>
+          <p v-if="lastTraceId" class="sidebar-hint trace-hint">
+            Trace {{ shortId(lastTraceId) }}
+          </p>
+        </template>
+
+        <template v-else>
+          <p v-if="artifactsError" class="sidebar-hint sidebar-error">{{ artifactsError }}</p>
+          <p v-else-if="artifactsLoading" class="sidebar-hint">加载中…</p>
+          <p v-else-if="artifacts.length === 0" class="sidebar-hint">
+            本会话暂无产物。生成 PDF / 写入文件 / 下载资源后会出现在这里。
+          </p>
+          <ul v-else class="artifact-list">
+            <li v-for="item in artifacts" :key="item.id" class="artifact-item">
+              <div class="artifact-meta">
+                <span class="artifact-name" :title="item.fileName">{{ item.fileName }}</span>
+                <span class="artifact-sub">
+                  {{ toolLabel(item.toolName) }}
+                  <template v-if="item.fileSize != null"> · {{ formatBytes(item.fileSize) }}</template>
+                </span>
+                <span v-if="item.createDate" class="artifact-time">{{ formatTime(item.createDate) }}</span>
+              </div>
+              <button
+                type="button"
+                class="artifact-download-btn"
+                :disabled="downloadingId === item.id"
+                @click="onDownloadArtifact(item)"
+              >
+                {{ downloadingId === item.id ? '…' : '下载' }}
+              </button>
+            </li>
+          </ul>
+        </template>
       </aside>
     </div>
+
+    <div v-if="hitlPending" class="hitl-modal" role="dialog" aria-label="危险工具确认">
+      <div class="hitl-card">
+        <h3>危险工具待确认</h3>
+        <p class="hitl-tool">{{ toolLabel(hitlPending.tool) }}</p>
+        <pre class="hitl-args">{{ hitlPending.arguments || '(无入参)' }}</pre>
+        <p class="hitl-tip">允许后才会真正执行；拒绝则跳过该工具。</p>
+        <div class="hitl-actions">
+          <button type="button" class="hitl-reject" :disabled="hitlBusy" @click="onHitlReject">
+            拒绝
+          </button>
+          <button type="button" class="hitl-approve" :disabled="hitlBusy" @click="onHitlApprove">
+            允许
+          </button>
+        </div>
+        <p v-if="hitlError" class="sidebar-hint sidebar-error">{{ hitlError }}</p>
+      </div>
+    </div>
+
     <SiteFooter compact />
   </div>
 </template>
@@ -360,6 +422,7 @@ import {
   updateConversation,
 } from '../api/conversation.js'
 import { downloadArtifact, formatBytes, listArtifacts } from '../api/artifact.js'
+import { approveHitl, rejectHitl } from '../api/hitl.js'
 import { APP_AVATARS } from '../constants/apps.js'
 import { DEFAULT_MODEL, MODEL_OPTIONS } from '../constants/models.js'
 import { generateChatId } from '../utils/chatId.js'
@@ -443,6 +506,11 @@ const props = defineProps({
     type: Boolean,
     default: false,
   },
+  /** Workspace：右侧「计划/产物」双 Tab */
+  workspaceMode: {
+    type: Boolean,
+    default: false,
+  },
   /** 应用主题色：love | agent */
   accent: {
     type: String,
@@ -499,6 +567,12 @@ const artifacts = ref([])
 const artifactsLoading = ref(false)
 const artifactsError = ref('')
 const downloadingId = ref('')
+const rightTab = ref('plan')
+const planItems = ref([])
+const lastTraceId = ref('')
+const hitlPending = ref(null)
+const hitlBusy = ref(false)
+const hitlError = ref('')
 let abortController = null
 let lastUserMessage = ''
 let stopping = false
@@ -530,10 +604,139 @@ function titleFromText(text) {
 function toolLabel(name) {
   const map = {
     generatePDF: 'PDF',
-    writeFile: '文件',
+    writeFile: '写入文件',
     downloadResource: '下载',
+    executeTerminalCommand: '终端命令',
+    searchWeb: '网页搜索',
+    searchImage: '图片搜索',
+    scrapeWebPage: '网页抓取',
+    doTerminate: '结束',
   }
   return map[name] || name || '工具'
+}
+
+function pushPlan(title, detail, status = 'pending') {
+  planItems.value = [...planItems.value, { title, detail: detail || '', status }]
+}
+
+function markPlanOutcome(toolName, eventText, outcome) {
+  const label = toolLabel(toolName)
+  const text = String(eventText || '')
+  const oc = String(outcome || '')
+  // 默认不要标「已完成」：无明确成功信号时保持/标为已结束
+  let status = 'failed'
+  let title = `${label} 已结束`
+
+  if (oc === 'rejected' || /已拒绝|用户拒绝|未执行/.test(text)) {
+    status = 'rejected'
+    title = `${label} 已拒绝`
+  } else if (oc === 'timeout' || /已超时|确认超时/.test(text)) {
+    status = 'rejected'
+    title = `${label} 已超时`
+  } else if (oc === 'running' || /执行中/.test(text)) {
+    status = 'running'
+    title = `执行中：${label}`
+  } else if (oc === 'failed' || /失败|Error|error|已结束/.test(text)) {
+    status = 'failed'
+    title = /已结束/.test(text) ? `${label} 已结束` : `${label} 失败`
+  } else if (oc === 'success' || (/已完成|成功/.test(text) && !/未执行|拒绝|失败|Error/.test(text))) {
+    status = 'done'
+    title = `${label} 已完成`
+  }
+
+  const list = [...planItems.value]
+  // 优先更新「等待确认/执行中」同一工具项，避免留下「等待确认」又追加「已完成」
+  const preferIdx = (() => {
+    for (let i = list.length - 1; i >= 0; i -= 1) {
+      const t = list[i].title || ''
+      if (
+        (t.includes('等待确认') || t.includes('执行中'))
+        && (t.includes(label) || t.includes(toolName) || label === '写入文件' || label === '终端命令')
+      ) {
+        return i
+      }
+    }
+    return -1
+  })()
+  const tryUpdate = (i) => {
+    const item = list[i]
+    if (
+      (item.status === 'rejected' || item.title.includes('已拒绝'))
+      && status !== 'rejected'
+    ) {
+      return 'block'
+    }
+    list[i] = { ...item, status, title, detail: item.detail || '' }
+    planItems.value = list
+    return 'ok'
+  }
+  if (preferIdx >= 0) {
+    const r = tryUpdate(preferIdx)
+    if (r === 'ok' || r === 'block') return
+  }
+  for (let i = list.length - 1; i >= 0; i -= 1) {
+    if (i === preferIdx) continue
+    const item = list[i]
+    const related =
+      item.status === 'running'
+      || item.title.includes(label)
+      || item.title.includes(toolName)
+      || item.title.includes('等待确认')
+      || item.title.includes('执行中')
+      || item.title.includes('已允许')
+      || item.title.includes('已拒绝')
+    if (!related) continue
+    const r = tryUpdate(i)
+    if (r === 'ok' || r === 'block') return
+  }
+  pushPlan(title, toolName, status)
+}
+
+async function onHitlApprove() {
+  if (!hitlPending.value?.approvalId) return
+  hitlBusy.value = true
+  hitlError.value = ''
+  const tool = hitlPending.value.tool
+  try {
+    // 先切到执行中，避免与 tool_done 竞态
+    markPlanOutcome(tool, '执行中', 'running')
+    const list = [...planItems.value]
+    for (let i = list.length - 1; i >= 0; i -= 1) {
+      if (list[i].title.includes('等待确认') || list[i].title.includes(toolLabel(tool))) {
+        list[i] = {
+          ...list[i],
+          status: 'running',
+          title: `执行中：${toolLabel(tool)}`,
+        }
+        break
+      }
+    }
+    planItems.value = list
+    await approveHitl(hitlPending.value.approvalId)
+    hitlPending.value = null
+  } catch (err) {
+    hitlError.value = err.message || '审批失败'
+  } finally {
+    hitlBusy.value = false
+  }
+}
+
+async function onHitlReject() {
+  if (!hitlPending.value?.approvalId) return
+  hitlBusy.value = true
+  hitlError.value = ''
+  const tool = hitlPending.value.tool
+  const approvalId = hitlPending.value.approvalId
+  // 关键：立刻标拒绝，再调 API（避免 tool_done 先到把状态打成已完成）
+  markPlanOutcome(tool, '已拒绝', 'rejected')
+  hitlPending.value = null
+  try {
+    await rejectHitl(approvalId)
+  } catch (err) {
+    hitlError.value = err.message || '拒绝失败'
+  } finally {
+    hitlBusy.value = false
+  }
 }
 
 async function refreshArtifacts() {
@@ -769,6 +972,9 @@ watch(messages, scrollToBottom, { deep: true })
 watch(chatId, () => {
   if (props.stepMode) {
     refreshArtifacts()
+    planItems.value = []
+    lastTraceId.value = ''
+    hitlPending.value = null
   }
 })
 
@@ -1182,15 +1388,48 @@ function handleAgentEvent(raw, aiIndex) {
           break
         }
         enqueueThinkingText(msg, readable, '\n\n')
+        if (props.workspaceMode && /准备调用|计划使用|正在调用/.test(readable)) {
+          pushPlan(readable.slice(0, 80), '', 'running')
+        }
+        // 思考区已出现拒绝文案时，同步计划状态（防 tool_done 误标完成）
+        if (props.workspaceMode && /用户拒绝|未执行/.test(readable)) {
+          const m = readable.match(/危险工具[「"]([^」"]+)[」"]/)
+          const tool = m?.[1] || (/终端|executeTerminalCommand/.test(readable)
+            ? 'executeTerminalCommand'
+            : 'writeFile')
+          markPlanOutcome(tool, '已拒绝', 'rejected')
+        }
       }
       break
     case 'tool_done':
       msg.thinking.status = 'in_progress'
       msg.thinking.collapsed = false
       if (event.text) {
-        enqueueThinkingText(msg, `✓ ${event.text}`, '\n')
+        const rejected = event.outcome === 'rejected' || /已拒绝|已超时|失败/.test(event.text)
+        enqueueThinkingText(msg, `${rejected ? '✗' : '✓'} ${event.text}`, '\n')
+      }
+      if (event.tool) {
+        markPlanOutcome(event.tool, event.text, event.outcome)
       }
       scheduleArtifactsRefresh()
+      break
+    case 'hitl_required':
+      hitlPending.value = {
+        approvalId: event.approvalId,
+        tool: event.tool,
+        arguments: event.arguments || '',
+      }
+      hitlError.value = ''
+      pushPlan(`等待确认：${toolLabel(event.tool)}`, event.arguments || '', 'running')
+      if (props.workspaceMode) {
+        rightTab.value = 'plan'
+        artifactsOpen.value = true
+      }
+      break
+    case 'trace_meta':
+      if (event.traceId) {
+        lastTraceId.value = event.traceId
+      }
       break
     case 'thinking_done':
       if (typeof event.elapsedMs === 'number') {
@@ -1364,6 +1603,13 @@ async function sendMessage(overrideText) {
 
   resetTypewriterState()
   lastUserMessage = text
+  planItems.value = []
+  lastTraceId.value = ''
+  hitlPending.value = null
+  hitlError.value = ''
+  if (props.workspaceMode) {
+    rightTab.value = 'plan'
+  }
   messages.value.push({ role: 'user', content: text })
   if (typeof overrideText !== 'string') {
     inputText.value = ''
@@ -2626,6 +2872,169 @@ onUnmounted(() => {
 .artifact-download-btn:disabled {
   opacity: 0.55;
   cursor: not-allowed;
+}
+
+.right-tabs {
+  display: flex;
+  gap: 4px;
+  flex: 1;
+}
+
+.right-tab {
+  border: none;
+  background: transparent;
+  color: var(--color-text-muted);
+  font-size: 13px;
+  font-weight: 600;
+  padding: 4px 10px;
+  border-radius: 999px;
+  cursor: pointer;
+}
+
+.right-tab.active {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+.plan-list {
+  list-style: none;
+  margin: 0;
+  padding: 8px;
+  overflow-y: auto;
+  flex: 1;
+}
+
+.plan-item {
+  display: flex;
+  gap: 8px;
+  padding: 8px;
+  margin-bottom: 6px;
+  border-radius: 10px;
+  background: rgba(15, 28, 46, 0.03);
+}
+
+.plan-item.done {
+  background: rgba(6, 118, 71, 0.08);
+}
+
+.plan-item.running {
+  background: rgba(181, 71, 8, 0.08);
+}
+
+.plan-item.rejected,
+.plan-item.failed {
+  background: rgba(180, 35, 24, 0.08);
+}
+
+.plan-idx {
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-size: 11px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.plan-body {
+  min-width: 0;
+}
+
+.plan-title {
+  display: block;
+  font-size: 12px;
+  color: var(--color-ink);
+  line-height: 1.4;
+}
+
+.plan-detail {
+  display: block;
+  margin-top: 2px;
+  font-size: 11px;
+  color: var(--color-text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.trace-hint {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+.hitl-modal {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(15, 28, 46, 0.45);
+  padding: 16px;
+}
+
+.hitl-card {
+  width: min(440px, 100%);
+  background: #fff;
+  border-radius: 16px;
+  padding: 20px;
+  box-shadow: var(--shadow-card);
+}
+
+.hitl-card h3 {
+  margin: 0 0 8px;
+  font-size: 18px;
+}
+
+.hitl-tool {
+  margin: 0 0 8px;
+  font-weight: 600;
+  color: var(--accent);
+}
+
+.hitl-args {
+  margin: 0 0 10px;
+  padding: 10px;
+  border-radius: 10px;
+  background: #f5f7fa;
+  font-size: 12px;
+  white-space: pre-wrap;
+  word-break: break-all;
+  max-height: 160px;
+  overflow: auto;
+}
+
+.hitl-tip {
+  margin: 0 0 14px;
+  font-size: 13px;
+  color: var(--color-text-muted);
+}
+
+.hitl-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.hitl-reject,
+.hitl-approve {
+  border-radius: 999px;
+  padding: 8px 16px;
+  cursor: pointer;
+  font-size: 13px;
+}
+
+.hitl-reject {
+  border: 1px solid var(--color-border);
+  background: #fff;
+}
+
+.hitl-approve {
+  border: 1px solid var(--accent);
+  background: var(--accent);
+  color: #fff;
 }
 
 .artifacts-backdrop {

@@ -9,6 +9,8 @@
       <div class="home-content">
         <div class="auth-bar">
           <template v-if="user">
+            <button class="auth-btn" type="button" @click="$router.push('/workspace')">Workspace</button>
+            <button class="auth-btn" type="button" @click="$router.push('/trace')">Trace</button>
             <button class="auth-btn" type="button" @click="$router.push('/knowledge')">知识库</button>
             <span class="auth-user">{{ user.nickname || user.username }}</span>
             <button class="auth-btn" type="button" @click="onLogout">退出</button>
@@ -34,6 +36,16 @@
               <h2>AI面试官小助手CC</h2>
               <p>深耕 AI 应用开发，助力技术方案、项目梳理与面试攻坚</p>
               <span class="enter-link">立即体验 <i>→</i></span>
+            </div>
+          </button>
+
+          <button class="app-card agent" type="button" @click="$router.push('/workspace')">
+            <div class="card-glow" aria-hidden="true" />
+            <img class="app-avatar" :src="avatars.agent" alt="Workspace 头像" />
+            <div class="app-body">
+              <h2>Agent Workspace</h2>
+              <p>三栏工作台：历史 · 对话思考 · 计划/产物；支持 HITL 与 Trace</p>
+              <span class="enter-link">进入工作台 <i>→</i></span>
             </div>
           </button>
 

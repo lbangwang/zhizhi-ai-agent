@@ -4,6 +4,8 @@ import LoveMaster from '../views/LoveMaster.vue'
 import SuperAgent from '../views/SuperAgent.vue'
 import Login from '../views/Login.vue'
 import Knowledge from '../views/Knowledge.vue'
+import Workspace from '../views/Workspace.vue'
+import Trace from '../views/Trace.vue'
 import { isLoggedIn } from '../utils/auth.js'
 
 const routes = [
@@ -28,6 +30,18 @@ const routes = [
     path: '/super-agent',
     name: 'SuperAgent',
     component: SuperAgent,
+    meta: { requiresAuth: true },
+  },
+  {
+    path: '/workspace',
+    name: 'Workspace',
+    component: Workspace,
+    meta: { requiresAuth: true },
+  },
+  {
+    path: '/trace',
+    name: 'Trace',
+    component: Trace,
     meta: { requiresAuth: true },
   },
   {

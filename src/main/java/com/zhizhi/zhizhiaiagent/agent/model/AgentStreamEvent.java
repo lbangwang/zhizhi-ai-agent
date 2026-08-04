@@ -66,7 +66,28 @@ public final class AgentStreamEvent {
      * @return JSON 事件字符串
      */
     public static String toolDone(int step, String tool, String summary) {
-        return toJson("tool_done", step, summary, tool, null);
+        return toolDone(step, tool, summary, null);
+    }
+
+    /**
+     * @param outcome success / rejected / failed / timeout（前端据此更新计划，避免误标完成）
+     */
+    public static String toolDone(int step, String tool, String summary, String outcome) {
+        Map<String, Object> payload = new LinkedHashMap<>();
+        payload.put("type", "tool_done");
+        if (step > 0) {
+            payload.put("step", step);
+        }
+        if (summary != null) {
+            payload.put("text", summary);
+        }
+        if (tool != null) {
+            payload.put("tool", tool);
+        }
+        if (outcome != null) {
+            payload.put("outcome", outcome);
+        }
+        return JSONUtil.toJsonStr(payload);
     }
 
     /**
@@ -97,6 +118,34 @@ public final class AgentStreamEvent {
      */
     public static String cancelled(String text) {
         return toJson("cancelled", null, text != null ? text : "已停止生成", null, null);
+    }
+
+    /**
+     * 危险工具人机确认：前端弹窗后调用 /hitl/{id}/approve|reject。
+     */
+    public static String hitlRequired(String approvalId, String tool, String argsSummary, Integer step) {
+        Map<String, Object> payload = new LinkedHashMap<>();
+        payload.put("type", "hitl_required");
+        if (step != null) {
+            payload.put("step", step);
+        }
+        payload.put("approvalId", approvalId);
+        payload.put("tool", tool);
+        payload.put("text", "危险工具「" + tool + "」待确认");
+        if (argsSummary != null) {
+            payload.put("arguments", argsSummary);
+        }
+        return JSONUtil.toJsonStr(payload);
+    }
+
+    /**
+     * Trace 元信息（可选推送给前端展示）。
+     */
+    public static String traceMeta(String traceId) {
+        Map<String, Object> payload = new LinkedHashMap<>();
+        payload.put("type", "trace_meta");
+        payload.put("traceId", traceId);
+        return JSONUtil.toJsonStr(payload);
     }
 
     /**
