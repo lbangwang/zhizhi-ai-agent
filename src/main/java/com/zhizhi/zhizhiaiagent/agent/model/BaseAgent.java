@@ -122,6 +122,16 @@ public abstract class BaseAgent {
         SseEmitter sseEmitter = new SseEmitter(SSE_TIMEOUT_MS);
         sseEmitter.onTimeout(() -> {
             status = AgentStatus.ERROR;
+            try {
+                sseEmitter.send(AgentStreamEvent.error("连接超时，请重试或缩短任务。"));
+            } catch (Exception ignored) {
+                // emitter may already be closed
+            }
+            try {
+                sseEmitter.complete();
+            } catch (Exception ignored) {
+                // ignore
+            }
             this.cleanup();
             log.warn("SSE连接超时");
         });

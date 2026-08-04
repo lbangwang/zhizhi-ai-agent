@@ -201,37 +201,100 @@ MCP（工具扩展）
 结构化日志 / Trace（Micrometer 或自建表）
 ```
 
-### 目标架构（面试可画）
+### 当前已落地架构（面试可画）
 
-```text
-Vue3 Workspace
-    │  JWT + SSE
-Spring Boot API
-    ├── Auth / 限流
-    ├── Session Service（MySQL + MyBatis-Plus）
-    ├── Agent Runtime（ReAct 状态机 + 可取消）
-    │     ├── Model Router（Qwen / DeepSeek / Doubao）
-    │     ├── Tool Registry + 审批 / 审计
-    │     └── MCP Client → 外部 Tools
-    ├── RAG Pipeline（解析 → 切片 → Embedding → 向量库 → 引用）
-    ├── Task / Artifact Service（Redis 状态 + OSS 文件）
-    └── Observability（TraceId + Token 统计）
+```mermaid
+flowchart TB
+  subgraph fe [Vue3 Frontend]
+    Home[Home Hub]
+    WS[Workspace]
+    MA[MultiAgent Planner-Worker]
+    KB[Knowledge]
+    TracePage[Trace]
+  end
+
+  subgraph api [Spring Boot API]
+    Auth[Sa-Token JWT]
+    Controllers[AIController / Hitl / Artifacts / Traces]
+    Manus[ZhizhiManus ReAct]
+    Multi[MultiAgentOrchestrator]
+    HITL[HITL Future Gate]
+    Stop[ChatStopSignal Redis/Local]
+    RAG[RAG Pipeline]
+    Obs[Tool Audit + Trace]
+  end
+
+  subgraph data [Data]
+    MySQL[(MySQL)]
+    Redis[(Redis)]
+    Vector[VectorStore]
+    Files[Artifacts FS]
+  end
+
+  Home --> WS
+  Home --> MA
+  Home --> KB
+  Home --> TracePage
+  WS -->|JWT + SSE| Controllers
+  MA -->|JWT + SSE| Controllers
+  Controllers --> Auth
+  Controllers --> Manus
+  Controllers --> Multi
+  Manus --> HITL
+  Multi --> HITL
+  Manus --> Stop
+  Multi --> Stop
+  Controllers --> RAG
+  Manus --> Obs
+  RAG --> Vector
+  Obs --> MySQL
+  Stop --> Redis
+  Controllers --> MySQL
+  Obs --> Files
 ```
 
-### 前端目标信息架构
+### 前端路由（已落地）
 
 ```text
 /                 Agent Hub 首页
-/workspace        统一工作台（历史 | 对话+思考 | 计划/产物）
-/tasks            任务中心（长任务进度）
+/workspace        三栏工作台（历史 | 对话+思考 | 计划/产物）
+/multi-agent      Planner → Worker 多 Agent 演示
+/super-agent      超级智能体（单栏）
+/love-master      AI 面试官小助手 CC
 /knowledge        知识库管理
-/artifacts        产物库
-/studio           Agent 工坊（后期可选）
-/settings         模型 / 工具权限 / MCP
+/trace            Trace / Token 统计
+/login            登录注册
 ```
 
----
+### 演示场景（3 个）
 
+#### 场景 1：Workspace + HITL
+
+| 项 | 内容 |
+|----|------|
+| 入口 | 登录后打开 `/workspace` |
+| Prompt | `帮忙写一个 hello.txt，内容为「早上好，枝枝」，只写 txt` |
+| 预期 | 弹出「危险工具待确认」；点**拒绝** → 计划显示「写入文件 已拒绝」；点**允许** → 产物可下载 |
+
+#### 场景 2：知识库 RAG
+
+| 项 | 内容 |
+|----|------|
+| 入口 | `/knowledge` 上传文档 → `/love-master` 提问 |
+| Prompt | 针对上传文档内容提问（如「文档里提到的技术栈有哪些？」） |
+| 预期 | 回答下方出现引用卡片（来自哪篇文档） |
+
+#### 场景 3：产物 + Trace
+
+| 项 | 内容 |
+|----|------|
+| 入口 | `/workspace` 生成 PDF 后打开 `/trace` |
+| Prompt | `请生成一份简短的 hello.pdf，介绍枝枝 AI 智能体`（HITL 若弹出请**允许**） |
+| 预期 | 右侧「产物」可下载；`/trace` 可见 TraceId、Token、耗时 |
+
+更多口播与架构讲解见 [`docs/`](docs/)（[`demo-script.md`](docs/demo-script.md)、[`architecture.md`](docs/architecture.md)、[`resume-bullets.md`](docs/resume-bullets.md)、[`interview-qa.md`](docs/interview-qa.md)）。
+
+---
 
 ---
 
@@ -429,7 +492,7 @@ mysql -uroot -p zhizhi_ai_agent < src/main/resources/db/tables/07_agent_trace.sq
 | W2 D1–D3 知识库（后端链路 + 前端页 + 引用卡片） | ✅ 完成 |
 | W2 D4–D5 产物 + 工具审计 | ✅ 完成 |
 | W3 Workspace + HITL + MCP + Trace | ✅ 完成 |
-| W4 Demo / 简历包装 | 待开始 |
+| W4 Demo / 简历包装 | ✅ 完成（见 [`docs/`](docs/)；录屏请按 [`docs/demo-script.md`](docs/demo-script.md) 本地录制） |
 
 ---
 

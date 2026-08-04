@@ -1619,7 +1619,9 @@ async function sendMessage(overrideText) {
 
   const aiIndex = messages.value.length
   const useAgentUi =
-    props.stepMode || String(props.apiUrl || '').includes('ZhizhiManus')
+    props.stepMode
+    || String(props.apiUrl || '').includes('ZhizhiManus')
+    || String(props.apiUrl || '').includes('MultiAgent')
   messages.value.push(
     useAgentUi ? createAgentMessage() : { role: 'ai', content: '', loading: true },
   )
@@ -1675,7 +1677,13 @@ async function sendMessage(overrideText) {
     )
   } catch (err) {
     if (err.name !== 'AbortError') {
-      const errorText = `[错误: ${err.message}]`
+      const raw = String(err.message || err || '')
+      const friendly = /timeout|超时|Timed out|network|Failed to fetch|Load failed/i.test(raw)
+        ? ( /timeout|超时|Timed out/i.test(raw)
+          ? '连接超时，请重试或缩短任务。'
+          : '网络异常，请检查后端是否启动后重试。')
+        : raw
+      const errorText = `[错误: ${friendly}]`
       if (useAgentUi) {
         handleAgentEvent(
           JSON.stringify({ type: 'error', text: errorText }),

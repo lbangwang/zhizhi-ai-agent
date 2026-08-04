@@ -5,6 +5,7 @@ import SuperAgent from '../views/SuperAgent.vue'
 import Login from '../views/Login.vue'
 import Knowledge from '../views/Knowledge.vue'
 import Workspace from '../views/Workspace.vue'
+import MultiAgent from '../views/MultiAgent.vue'
 import Trace from '../views/Trace.vue'
 import { isLoggedIn } from '../utils/auth.js'
 
@@ -36,6 +37,12 @@ const routes = [
     path: '/workspace',
     name: 'Workspace',
     component: Workspace,
+    meta: { requiresAuth: true },
+  },
+  {
+    path: '/multi-agent',
+    name: 'MultiAgent',
+    component: MultiAgent,
     meta: { requiresAuth: true },
   },
   {

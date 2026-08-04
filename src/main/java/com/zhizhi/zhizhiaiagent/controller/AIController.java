@@ -3,6 +3,7 @@ package com.zhizhi.zhizhiaiagent.controller;
 import cn.dev33.satoken.stp.StpUtil;
 import com.zhizhi.zhizhiaiagent.agent.model.ZhizhiManus;
 import com.zhizhi.zhizhiaiagent.agent.model.enums.AgentType;
+import com.zhizhi.zhizhiaiagent.agent.multi.MultiAgentOrchestrator;
 import com.zhizhi.zhizhiaiagent.agent.observability.AgentToolObservabilityService;
 import com.zhizhi.zhizhiaiagent.agent.stop.ChatStopSignalService;
 import com.zhizhi.zhizhiaiagent.app.LoveApp;
@@ -53,6 +54,9 @@ public class AIController {
 
     @Autowired(required = false)
     private AgentTraceService agentTraceService;
+
+    @Autowired
+    private MultiAgentOrchestrator multiAgentOrchestrator;
 
     @GetMapping("/doChatBySyn")
     public String doChatBySyn(String message, String chatId,
@@ -125,6 +129,46 @@ public class AIController {
             return zhizhiManus.runStream(enhancedMessage);
         } catch (Exception e) {
             log.error("ZhizhiManus start failed, model={}", model, e);
+            SseEmitter sseEmitter = new SseEmitter(300000L);
+            try {
+                sseEmitter.send(e.getMessage());
+                sseEmitter.complete();
+            } catch (IOException ioException) {
+                sseEmitter.completeWithError(ioException);
+            }
+            return sseEmitter;
+        }
+    }
+
+    /**
+     * W4：Planner → Worker 多 Agent（SSE 事件格式与 Manus 一致，停止接口复用 stopChatByZhizhiManus）。
+     */
+    @GetMapping(value = "/doChatByMultiAgent")
+    public SseEmitter doChatByMultiAgent(String message,
+                                         String chatId,
+                                         @RequestParam(defaultValue = "qwen") String model) {
+        try {
+            ChatModel chatModel = chatModelRouter.resolve(model);
+            String userId = null;
+            try {
+                if (StpUtil.isLogin()) {
+                    userId = StpUtil.getLoginIdAsString();
+                }
+            } catch (Exception ignored) {
+                // Sa-Token 未启用时忽略
+            }
+            log.info("MultiAgent using model={}, chatId={}", model, chatId);
+            return multiAgentOrchestrator.runStream(
+                    message,
+                    chatId,
+                    userId,
+                    chatModel,
+                    chatModelRouter.resolveChatOptions(model),
+                    toolCallbacks,
+                    toolObservabilityService,
+                    agentTraceService);
+        } catch (Exception e) {
+            log.error("MultiAgent start failed, model={}", model, e);
             SseEmitter sseEmitter = new SseEmitter(300000L);
             try {
                 sseEmitter.send(e.getMessage());

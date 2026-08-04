@@ -1,101 +1,142 @@
 <template>
   <div class="knowledge-page">
     <ParticleBackground density="light" />
-    <div class="orb orb-a" aria-hidden="true" />
-    <div class="orb orb-b" aria-hidden="true" />
 
-    <div class="panel">
-      <header class="panel-header">
-        <button class="back-btn" type="button" @click="$router.push('/')">返回</button>
-        <div class="header-text">
-          <p class="eyebrow">Knowledge Base</p>
-          <h1>知识库</h1>
-          <p class="sub">上传文档 → 自动切片 → 写入 VectorStore；对话时可展示引用来源</p>
+    <div class="shell">
+      <header class="topbar">
+        <button class="btn ghost" type="button" @click="$router.push('/')">← 返回</button>
+        <div class="brand-row">
+          <img class="brand-icon" src="/avatars/knowledge.svg" alt="" />
+          <div>
+            <h1>知识库</h1>
+            <p class="sub">上传文档 → 自动切片 → 写入向量库；对话时可展示引用来源</p>
+          </div>
         </div>
+        <button
+          class="btn ghost"
+          type="button"
+          :disabled="loading || uploading"
+          @click="loadList"
+        >
+          刷新
+        </button>
       </header>
 
-      <section class="upload-section">
-        <label
-          class="dropzone"
-          :class="{ dragging, disabled: uploading }"
-          @dragenter.prevent="dragging = true"
-          @dragover.prevent="dragging = true"
-          @dragleave.prevent="dragging = false"
-          @drop.prevent="onDrop"
-        >
-          <input
-            class="file-input"
-            type="file"
-            accept=".md,.markdown,.txt,.doc,.docx,text/plain,text/markdown,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-            :disabled="uploading"
-            @change="onFileChange"
-          />
-          <span class="drop-title">{{ uploading ? '上传并入库中…' : '拖拽或点击上传' }}</span>
-          <span class="drop-hint">支持 .md / .txt / .docx / .doc，单文件不超过 10MB</span>
-        </label>
-        <div class="upload-row">
-          <input
-            v-model.trim="title"
-            class="title-input"
-            type="text"
-            placeholder="可选：自定义标题"
-            :disabled="uploading"
-          />
-          <button class="refresh-btn" type="button" :disabled="loading || uploading" @click="loadList">
-            刷新列表
-          </button>
-        </div>
-        <p v-if="error" class="error">{{ error }}</p>
-        <p v-if="success" class="success">{{ success }}</p>
-      </section>
-
-      <section class="list-section">
-        <div class="section-head">
-          <h2>我的文档</h2>
-          <span class="count">{{ documents.length }} 篇</span>
-        </div>
-        <p v-if="loading" class="hint">加载中…</p>
-        <p v-else-if="documents.length === 0" class="hint">暂无文档，上传后即可在面试官对话中引用</p>
-        <ul v-else class="doc-list">
-          <li v-for="doc in documents" :key="doc.id" class="doc-item">
-            <div class="doc-main">
-              <strong class="doc-title">{{ doc.title || doc.filename }}</strong>
-              <span class="doc-meta">
-                {{ doc.filename }} · {{ doc.chunkCount || 0 }} 切片 · {{ formatTime(doc.updateDate) }}
-              </span>
+      <div class="stack">
+        <section class="card">
+          <div class="card-head">
+            <span class="step">1</span>
+            <div>
+              <h2>上传文档</h2>
+              <p>支持 Markdown / 文本 / Word，单文件不超过 10MB</p>
             </div>
-            <button
-              class="delete-btn"
-              type="button"
-              title="删除"
-              :disabled="deletingId === doc.id"
-              @click="onDelete(doc)"
-            >
-              {{ deletingId === doc.id ? '…' : '删除' }}
-            </button>
-          </li>
-        </ul>
-      </section>
+          </div>
 
-      <section class="retrieve-section">
-        <div class="section-head">
-          <h2>试检索</h2>
-        </div>
-        <div class="retrieve-row">
-          <input
-            v-model.trim="retrieveQuery"
-            class="retrieve-input"
-            type="text"
-            placeholder="输入问题，预览会命中哪些片段"
-            @keydown.enter.prevent="onRetrieve"
-          />
-          <button class="primary-btn" type="button" :disabled="retrieving || !retrieveQuery" @click="onRetrieve">
-            {{ retrieving ? '检索中…' : '检索' }}
-          </button>
-        </div>
-        <CitationCards v-if="citations.length" :citations="citations" />
-        <p v-else-if="retrieveTried && !retrieving" class="hint">未命中片段，试试换个问法或先上传相关文档</p>
-      </section>
+          <label
+            class="dropzone"
+            :class="{ dragging, disabled: uploading }"
+            @dragenter.prevent="dragging = true"
+            @dragover.prevent="dragging = true"
+            @dragleave.prevent="dragging = false"
+            @drop.prevent="onDrop"
+          >
+            <input
+              class="file-input"
+              type="file"
+              accept=".md,.markdown,.txt,.doc,.docx,text/plain,text/markdown,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+              :disabled="uploading"
+              @change="onFileChange"
+            />
+            <span class="drop-icon" aria-hidden="true">↑</span>
+            <span class="drop-title">{{ uploading ? '上传并入库中…' : '拖拽到此处，或点击选择文件' }}</span>
+            <span class="drop-hint">.md · .txt · .docx · .doc</span>
+          </label>
+
+          <div class="upload-row">
+            <input
+              v-model.trim="title"
+              class="field"
+              type="text"
+              placeholder="可选：自定义标题"
+              :disabled="uploading"
+            />
+          </div>
+          <p v-if="error" class="msg error">{{ error }}</p>
+          <p v-if="success" class="msg success">{{ success }}</p>
+        </section>
+
+        <section class="card">
+          <div class="card-head">
+            <span class="step">2</span>
+            <div>
+              <h2>我的文档</h2>
+              <p>已入库并可被对话检索引用</p>
+            </div>
+            <span class="count">{{ documents.length }} 篇</span>
+          </div>
+
+          <p v-if="loading" class="hint">加载中…</p>
+          <div v-else-if="documents.length === 0" class="empty">
+            <p>暂无文档</p>
+            <span>上传后即可在面试官对话中展示引用卡片</span>
+          </div>
+          <ul v-else class="doc-list">
+            <li v-for="doc in documents" :key="doc.id" class="doc-item">
+              <div class="doc-badge" aria-hidden="true">{{ fileBadge(doc.filename) }}</div>
+              <div class="doc-main">
+                <strong class="doc-title">{{ doc.title || doc.filename }}</strong>
+                <span class="doc-meta">
+                  <span>{{ doc.filename }}</span>
+                  <span>{{ doc.chunkCount || 0 }} 切片</span>
+                  <span>{{ formatTime(doc.updateDate) }}</span>
+                </span>
+              </div>
+              <button
+                class="btn danger"
+                type="button"
+                title="删除"
+                :disabled="deletingId === doc.id"
+                @click="onDelete(doc)"
+              >
+                {{ deletingId === doc.id ? '…' : '删除' }}
+              </button>
+            </li>
+          </ul>
+        </section>
+
+        <section class="card">
+          <div class="card-head">
+            <span class="step">3</span>
+            <div>
+              <h2>试检索</h2>
+              <p>预览问题会命中哪些片段</p>
+            </div>
+          </div>
+
+          <div class="retrieve-row">
+            <input
+              v-model.trim="retrieveQuery"
+              class="field"
+              type="text"
+              placeholder="输入问题，例如：文档里提到的 MCP 是什么？"
+              @keydown.enter.prevent="onRetrieve"
+            />
+            <button
+              class="btn primary"
+              type="button"
+              :disabled="retrieving || !retrieveQuery"
+              @click="onRetrieve"
+            >
+              {{ retrieving ? '检索中…' : '检索' }}
+            </button>
+          </div>
+
+          <CitationCards v-if="citations.length" :citations="citations" />
+          <p v-else-if="retrieveTried && !retrieving" class="hint retrieve-hint">
+            未命中片段，试试换个问法或先上传相关文档
+          </p>
+        </section>
+      </div>
     </div>
   </div>
 </template>
@@ -134,6 +175,14 @@ function formatTime(value) {
   const hh = String(d.getHours()).padStart(2, '0')
   const mi = String(d.getMinutes()).padStart(2, '0')
   return `${mm}-${dd} ${hh}:${mi}`
+}
+
+function fileBadge(filename = '') {
+  const name = String(filename).toLowerCase()
+  if (name.endsWith('.md') || name.endsWith('.markdown')) return 'MD'
+  if (name.endsWith('.txt')) return 'TXT'
+  if (name.endsWith('.docx') || name.endsWith('.doc')) return 'DOC'
+  return 'FILE'
 }
 
 async function loadList() {
@@ -221,100 +270,119 @@ onMounted(loadList)
   isolation: isolate;
   min-height: 100vh;
   min-height: 100dvh;
-  display: flex;
-  justify-content: center;
   padding:
-    calc(20px + var(--safe-top))
-    calc(16px + var(--safe-right))
+    calc(16px + var(--safe-top))
+    calc(var(--page-padding-x) + var(--safe-right))
     calc(20px + var(--safe-bottom))
-    calc(16px + var(--safe-left));
+    calc(var(--page-padding-x) + var(--safe-left));
 }
 
-.orb {
-  position: absolute;
-  border-radius: 50%;
-  filter: blur(56px);
-  pointer-events: none;
-  z-index: 0;
-}
-
-.orb-a {
-  width: min(320px, 50vw);
-  height: min(320px, 50vw);
-  top: -8%;
-  left: -6%;
-  background: rgba(31, 111, 139, 0.28);
-}
-
-.orb-b {
-  width: min(280px, 45vw);
-  height: min(280px, 45vw);
-  right: -8%;
-  bottom: 10%;
-  background: rgba(47, 122, 107, 0.2);
-}
-
-.panel {
+.shell {
   position: relative;
   z-index: 1;
-  width: 100%;
-  max-width: 760px;
-  display: flex;
-  flex-direction: column;
-  gap: 18px;
+  width: min(720px, 100%);
+  margin: 0 auto;
   animation: page-enter 0.4s ease-out;
 }
 
-.panel-header {
+.topbar {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: 16px;
+  margin-bottom: 20px;
+}
+
+.brand-row {
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   gap: 12px;
+  min-width: 0;
 }
 
-.back-btn {
+.brand-icon {
+  width: 48px;
+  height: 48px;
+  border-radius: 14px;
   flex-shrink: 0;
-  min-height: 36px;
-  margin-top: 4px;
-  padding: 6px 14px;
-  border: 1px solid var(--color-border);
-  border-radius: 999px;
-  background: var(--color-surface-soft);
-  color: var(--color-text-secondary);
-  cursor: pointer;
-  font-size: 13px;
 }
 
-.eyebrow {
-  margin: 0 0 4px;
-  font-size: 12px;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: var(--color-primary);
-}
-
-.header-text h1 {
+.brand-row h1 {
   margin: 0;
   font-family: var(--font-display);
-  font-size: clamp(1.6rem, 4vw, 2rem);
+  font-size: clamp(22px, 3vw, 28px);
+  font-weight: 700;
   color: var(--color-ink);
+  line-height: 1.15;
 }
 
 .sub {
-  margin: 6px 0 0;
-  font-size: 14px;
-  color: var(--color-text-secondary);
-  line-height: 1.5;
+  margin: 4px 0 0;
+  font-size: 13px;
+  color: var(--color-text-muted);
+  line-height: 1.45;
 }
 
-.upload-section,
-.list-section,
-.retrieve-section {
-  background: linear-gradient(165deg, rgba(255, 255, 255, 0.86), rgba(255, 255, 255, 0.68));
-  backdrop-filter: blur(16px);
+.stack {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.card {
+  background: rgba(255, 255, 255, 0.72);
   border: 1px solid rgba(255, 255, 255, 0.7);
-  border-radius: var(--radius-lg);
-  box-shadow: var(--shadow-soft);
-  padding: 16px;
+  border-radius: var(--radius-md);
+  padding: 18px;
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+}
+
+.card-head {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+
+.card-head h2 {
+  margin: 0 0 4px;
+  font-family: var(--font-display);
+  font-size: 17px;
+  font-weight: 650;
+  color: var(--color-ink);
+}
+
+.card-head p {
+  margin: 0;
+  font-size: 13px;
+  color: var(--color-text-muted);
+  line-height: 1.4;
+}
+
+.step {
+  flex-shrink: 0;
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+  display: grid;
+  place-items: center;
+  font-family: var(--font-display);
+  font-size: 13px;
+  font-weight: 700;
+  color: #fff;
+  background: linear-gradient(145deg, #1f6f8b, #2f7a6b);
+}
+
+.count {
+  margin-left: auto;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--color-primary);
+  background: var(--color-primary-soft);
+  padding: 4px 10px;
+  border-radius: var(--radius-sm);
+  align-self: center;
 }
 
 .dropzone {
@@ -323,19 +391,18 @@ onMounted(loadList)
   align-items: center;
   justify-content: center;
   gap: 6px;
-  min-height: 120px;
-  border: 1.5px dashed rgba(31, 111, 139, 0.35);
+  min-height: 132px;
+  border: 1.5px dashed rgba(31, 111, 139, 0.32);
   border-radius: var(--radius-md);
-  background: rgba(31, 111, 139, 0.05);
+  background: rgba(31, 111, 139, 0.04);
   cursor: pointer;
-  transition:
-    border-color 0.2s,
-    background 0.2s;
+  transition: border-color 0.2s ease, background 0.2s ease;
 }
 
+.dropzone:hover,
 .dropzone.dragging {
   border-color: var(--color-primary);
-  background: rgba(31, 111, 139, 0.12);
+  background: rgba(31, 111, 139, 0.1);
 }
 
 .dropzone.disabled {
@@ -347,8 +414,21 @@ onMounted(loadList)
   display: none;
 }
 
+.drop-icon {
+  width: 36px;
+  height: 36px;
+  border-radius: 10px;
+  display: grid;
+  place-items: center;
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--color-primary);
+  background: rgba(255, 255, 255, 0.8);
+  border: 1px solid rgba(31, 111, 139, 0.15);
+}
+
 .drop-title {
-  font-size: 15px;
+  font-size: 14px;
   font-weight: 600;
   color: var(--color-ink);
 }
@@ -358,81 +438,89 @@ onMounted(loadList)
   color: var(--color-text-muted);
 }
 
-.upload-row,
-.retrieve-row {
-  display: flex;
-  gap: 10px;
+.upload-row {
   margin-top: 12px;
 }
 
-.title-input,
-.retrieve-input {
-  flex: 1;
+.field {
+  width: 100%;
   min-width: 0;
   height: 40px;
   padding: 0 12px;
-  border: 1px solid rgba(15, 28, 46, 0.12);
-  border-radius: 10px;
-  background: rgba(255, 255, 255, 0.85);
+  border: 1px solid rgba(15, 28, 46, 0.1);
+  border-radius: var(--radius-sm);
+  background: rgba(255, 255, 255, 0.9);
   font-size: 14px;
+  color: var(--color-text);
 }
 
-.refresh-btn,
-.primary-btn,
-.delete-btn {
-  flex-shrink: 0;
-  height: 40px;
-  padding: 0 14px;
-  border-radius: 10px;
-  border: 1px solid rgba(31, 111, 139, 0.25);
-  background: rgba(31, 111, 139, 0.08);
-  color: var(--color-primary);
-  cursor: pointer;
+.field:focus {
+  outline: none;
+  border-color: rgba(31, 111, 139, 0.45);
+  box-shadow: 0 0 0 3px rgba(31, 111, 139, 0.12);
+}
+
+.btn {
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
   font-size: 13px;
   font-weight: 600;
+  cursor: pointer;
+  min-height: 36px;
+  padding: 0 14px;
+  transition: background 0.2s ease, border-color 0.2s ease, opacity 0.2s ease;
 }
 
-.primary-btn {
+.btn.ghost {
+  background: rgba(255, 255, 255, 0.55);
+  border-color: rgba(18, 38, 58, 0.1);
+  color: var(--color-text-secondary);
+}
+
+.btn.ghost:hover:not(:disabled) {
+  border-color: rgba(31, 111, 139, 0.3);
+  color: var(--color-primary);
+}
+
+.btn.primary {
   background: var(--color-primary);
-  border-color: var(--color-primary);
   color: #fff;
 }
 
-.primary-btn:disabled,
-.refresh-btn:disabled,
-.delete-btn:disabled {
+.btn.primary:hover:not(:disabled) {
+  background: var(--color-primary-hover);
+}
+
+.btn.danger {
+  flex-shrink: 0;
+  min-height: 32px;
+  padding: 0 12px;
+  color: #b42318;
+  background: rgba(180, 35, 24, 0.06);
+  border-color: rgba(180, 35, 24, 0.16);
+}
+
+.btn.danger:hover:not(:disabled) {
+  background: rgba(180, 35, 24, 0.1);
+}
+
+.btn:disabled {
   opacity: 0.5;
   cursor: not-allowed;
 }
 
-.error {
+.msg {
   margin: 10px 0 0;
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.msg.error {
   color: #b42318;
-  font-size: 13px;
 }
 
-.success {
-  margin: 10px 0 0;
+.msg.success {
   color: #17663f;
-  font-size: 13px;
-}
-
-.section-head {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  margin-bottom: 12px;
-}
-
-.section-head h2 {
-  margin: 0;
-  font-size: 16px;
-  color: var(--color-ink);
-}
-
-.count {
-  font-size: 12px;
-  color: var(--color-text-muted);
 }
 
 .hint {
@@ -440,6 +528,25 @@ onMounted(loadList)
   font-size: 13px;
   color: var(--color-text-muted);
   line-height: 1.5;
+}
+
+.empty {
+  padding: 28px 16px;
+  text-align: center;
+  border-radius: var(--radius-sm);
+  background: rgba(244, 248, 252, 0.7);
+  border: 1px dashed rgba(15, 28, 46, 0.1);
+}
+
+.empty p {
+  margin: 0 0 4px;
+  font-weight: 600;
+  color: var(--color-text-secondary);
+}
+
+.empty span {
+  font-size: 13px;
+  color: var(--color-text-muted);
 }
 
 .doc-list {
@@ -454,11 +561,27 @@ onMounted(loadList)
 .doc-item {
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 10px 12px;
-  border-radius: 12px;
-  background: rgba(244, 248, 252, 0.8);
+  gap: 12px;
+  padding: 12px;
+  border-radius: var(--radius-sm);
+  background: rgba(244, 248, 252, 0.75);
   border: 1px solid rgba(15, 28, 46, 0.06);
+}
+
+.doc-badge {
+  flex-shrink: 0;
+  width: 40px;
+  height: 40px;
+  border-radius: 10px;
+  display: grid;
+  place-items: center;
+  font-family: var(--font-display);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  color: var(--color-primary);
+  background: rgba(255, 255, 255, 0.9);
+  border: 1px solid rgba(31, 111, 139, 0.15);
 }
 
 .doc-main {
@@ -466,7 +589,7 @@ onMounted(loadList)
   min-width: 0;
   display: flex;
   flex-direction: column;
-  gap: 3px;
+  gap: 4px;
 }
 
 .doc-title {
@@ -478,41 +601,72 @@ onMounted(loadList)
 }
 
 .doc-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 12px;
   font-size: 12px;
   color: var(--color-text-muted);
 }
 
-.delete-btn {
-  height: 32px;
-  padding: 0 10px;
-  color: #b42318;
-  background: rgba(180, 35, 24, 0.06);
-  border-color: rgba(180, 35, 24, 0.18);
+.retrieve-row {
+  display: flex;
+  gap: 10px;
+  align-items: center;
 }
 
-.retrieve-section :deep(.citation-block) {
+.retrieve-row .field {
+  flex: 1;
+}
+
+.retrieve-row .btn.primary {
+  flex-shrink: 0;
+  min-height: 40px;
+}
+
+.retrieve-hint {
   margin-top: 12px;
 }
 
-@keyframes page-enter {
-  from {
-    opacity: 0;
-    transform: translateY(10px);
-  }
-  to {
-    opacity: 1;
-    transform: none;
-  }
+:deep(.citation-block) {
+  margin-top: 14px;
 }
 
 @media (max-width: 640px) {
-  .upload-row,
-  .retrieve-row {
-    flex-direction: column;
+  .topbar {
+    grid-template-columns: 1fr auto;
+    grid-template-areas:
+      'back refresh'
+      'brand brand';
   }
 
-  .refresh-btn,
-  .primary-btn {
+  .topbar .btn.ghost:first-child {
+    grid-area: back;
+    justify-self: start;
+  }
+
+  .topbar .btn.ghost:last-child {
+    grid-area: refresh;
+    justify-self: end;
+  }
+
+  .brand-row {
+    grid-area: brand;
+  }
+
+  .doc-item {
+    flex-wrap: wrap;
+  }
+
+  .btn.danger {
+    margin-left: auto;
+  }
+
+  .retrieve-row {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .retrieve-row .btn.primary {
     width: 100%;
   }
 }
