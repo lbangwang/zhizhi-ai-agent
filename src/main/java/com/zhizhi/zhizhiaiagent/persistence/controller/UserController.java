@@ -19,7 +19,7 @@ public class UserController {
 
     private final UserService userService;
 
-    @Operation(summary = "查询当前登录用户")
+    @Operation(summary = "查询当前登录用户", description = "根据当前登录态返回用户基本信息。")
     @GetMapping("/me")
     public ApiResult<UserResponse> me() {
         return ApiResult.ok(userService.getById(StpUtil.getLoginIdAsString()));

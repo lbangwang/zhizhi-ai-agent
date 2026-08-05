@@ -144,6 +144,8 @@ app:
     paragraph-min-merge-chars: ${KNOWLEDGE_PARAGRAPH_MIN_MERGE_CHARS:80}
     top-k: 4
     similarity-threshold: 0.45
+    # 入库 embedding 批量大小（SimpleVectorStore 默认逐条调用很慢；通义建议 ≤25）
+    embed-batch-size: ${KNOWLEDGE_EMBED_BATCH_SIZE:16}
     seed-classpath-docs: ${KNOWLEDGE_SEED_CLASSPATH:true}
     cloud-rag-enabled: ${KNOWLEDGE_CLOUD_RAG_ENABLED:false}
 

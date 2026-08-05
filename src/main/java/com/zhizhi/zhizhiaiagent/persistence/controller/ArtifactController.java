@@ -6,6 +6,7 @@ import com.zhizhi.zhizhiaiagent.persistence.dto.ArtifactResponse;
 import com.zhizhi.zhizhiaiagent.persistence.entity.ArtifactEntity;
 import com.zhizhi.zhizhiaiagent.persistence.service.ArtifactService;
 import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
@@ -32,16 +33,21 @@ public class ArtifactController {
 
     private final ArtifactService artifactService;
 
-    @Operation(summary = "当前会话/用户产物列表")
+    @Operation(summary = "当前会话/用户产物列表",
+            description = "查询 Agent 生成的产物（文件、报告等）列表，可按会话筛选。")
     @GetMapping
     public ApiResult<List<ArtifactResponse>> list(
+            @Parameter(description = "会话 ID，不传则返回当前用户全部产物", required = false,
+                    example = "a1b2c3d4e5f6789012345678abcdef01")
             @RequestParam(value = "chatId", required = false) String chatId) {
         return ApiResult.ok(artifactService.listByChatId(StpUtil.getLoginIdAsString(), chatId));
     }
 
-    @Operation(summary = "下载产物文件")
+    @Operation(summary = "下载产物文件", description = "按产物 ID 下载 Agent 生成的文件。")
     @GetMapping("/{id}/download")
-    public ResponseEntity<Resource> download(@PathVariable String id) {
+    public ResponseEntity<Resource> download(
+            @Parameter(description = "产物 ID", required = true, example = "a1b2c3d4e5f6789012345678abcdef01")
+            @PathVariable String id) {
         String userId = StpUtil.getLoginIdAsString();
         ArtifactEntity entity = artifactService.requireOwned(id, userId);
         Resource resource = artifactService.loadAsResource(id, userId);

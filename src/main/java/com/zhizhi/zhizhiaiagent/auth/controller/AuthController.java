@@ -27,26 +27,26 @@ public class AuthController {
     @Autowired
     private  AuthService authService;
 
-    @Operation(summary = "注册")
+    @Operation(summary = "注册", description = "注册新用户并返回登录凭证。")
     @PostMapping("/register")
     public ApiResult<LoginResponse> register(@RequestBody RegisterRequest request) {
         return ApiResult.ok(authService.register(request));
     }
 
-    @Operation(summary = "登录")
+    @Operation(summary = "登录", description = "用户名密码登录，返回 Token 等凭证信息。")
     @PostMapping("/login")
     public ApiResult<LoginResponse> login(@RequestBody LoginRequest request) {
         return ApiResult.ok(authService.login(request));
     }
 
-    @Operation(summary = "退出登录")
+    @Operation(summary = "退出登录", description = "注销当前登录态，使 Token 失效。")
     @PostMapping("/logout")
     public ApiResult<Void> logout() {
         authService.logout();
         return ApiResult.ok(null);
     }
 
-    @Operation(summary = "当前用户")
+    @Operation(summary = "当前用户", description = "查询当前已登录用户的基本信息。")
     @GetMapping("/me")
     public ApiResult<UserResponse> me() {
         return ApiResult.ok(authService.currentUser());
