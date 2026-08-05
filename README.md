@@ -294,6 +294,8 @@ flowchart TB
 
 更多口播与架构讲解见 [`docs/`](docs/)（[`demo-script.md`](docs/demo-script.md)、[`architecture.md`](docs/architecture.md)、[`resume-bullets.md`](docs/resume-bullets.md)、[`interview-qa.md`](docs/interview-qa.md)）。
 
+云上给面试官演示：见 [`docs/deploy-aliyun-swas.md`](docs/deploy-aliyun-swas.md)（阿里云轻量应用服务器部署清单）。
+
 ---
 
 ---
@@ -493,6 +495,7 @@ mysql -uroot -p zhizhi_ai_agent < src/main/resources/db/tables/07_agent_trace.sq
 | W2 D4–D5 产物 + 工具审计 | ✅ 完成 |
 | W3 Workspace + HITL + MCP + Trace | ✅ 完成 |
 | W4 Demo / 简历包装 | ✅ 完成（见 [`docs/`](docs/)；录屏请按 [`docs/demo-script.md`](docs/demo-script.md) 本地录制） |
+| 云部署清单（阿里云轻量） | ✅ 见 [`docs/deploy-aliyun-swas.md`](docs/deploy-aliyun-swas.md) |
 
 ---
 

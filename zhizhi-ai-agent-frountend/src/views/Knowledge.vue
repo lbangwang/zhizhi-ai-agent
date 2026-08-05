@@ -6,7 +6,7 @@
       <header class="topbar">
         <button class="btn ghost" type="button" @click="$router.push('/')">← 返回</button>
         <div class="brand-row">
-          <img class="brand-icon" src="/avatars/knowledge.svg" alt="" />
+          <img class="brand-icon" :src="APP_AVATARS.knowledge" alt="" />
           <div>
             <h1>知识库</h1>
             <p class="sub">上传文档 → 自动切片 → 写入向量库；对话时可展示引用来源</p>
@@ -145,6 +145,7 @@
 import { onMounted, ref } from 'vue'
 import ParticleBackground from '../components/ParticleBackground.vue'
 import CitationCards from '../components/CitationCards.vue'
+import { APP_AVATARS } from '../constants/apps.js'
 import {
   deleteDocument,
   listDocuments,
