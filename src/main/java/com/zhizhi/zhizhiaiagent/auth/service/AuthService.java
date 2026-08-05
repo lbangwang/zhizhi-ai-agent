@@ -28,15 +28,18 @@ public class AuthService {
 
     @Transactional
     public LoginResponse register(RegisterRequest request) {
+        //校验用户名和密码
         String username = requireUsername(request.getUsername());
         String password = requirePassword(request.getPassword());
 
+        //数据库是否存在
         Long count = userMapper.selectCount(new LambdaQueryWrapper<UserEntity>()
                 .eq(UserEntity::getUsername, username));
         if (count != null && count > 0) {
             throw new IllegalArgumentException("用户名已存在");
         }
 
+        //设置用户信息
         UserEntity entity = new UserEntity();
         entity.setId(IdGenerator.nextId());
         entity.setUsername(username);
@@ -48,6 +51,7 @@ public class AuthService {
         AuditHelper.fillOnCreate(entity, username, null);
         userMapper.insert(entity);
 
+        //返回用户和token相关信息
         return loginByUser(entity);
     }
 

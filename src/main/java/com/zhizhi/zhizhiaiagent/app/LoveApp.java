@@ -266,6 +266,7 @@ public class LoveApp {
             return Flux.just("会话ID不能为空");
         }
 
+        //获取模型对应的chatClient
         final ChatClient selectedClient;
         try {
             selectedClient = getChatClient(model);
