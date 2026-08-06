@@ -30,7 +30,7 @@
         </button>
       </form>
 
-      <button class="switch" type="button" @click="toggleMode">
+      <button v-if="registerEnabled" class="switch" type="button" @click="toggleMode">
         {{ mode === 'login' ? '没有账号？去注册' : '已有账号？去登录' }}
       </button>
       <button class="back" type="button" @click="$router.push('/')">返回首页</button>
@@ -49,6 +49,9 @@ const brandName = BRAND_NAME
 const route = useRoute()
 const router = useRouter()
 
+/** 与后端 AUTH_REGISTER_ENABLED 对齐；云端构建默认 false，隐藏注册入口 */
+const registerEnabled = String(import.meta.env.VITE_AUTH_REGISTER_ENABLED ?? 'false') === 'true'
+
 const mode = ref('login')
 const username = ref('')
 const nickname = ref('')
@@ -57,6 +60,10 @@ const error = ref('')
 const loading = ref(false)
 
 function toggleMode() {
+  if (!registerEnabled) {
+    mode.value = 'login'
+    return
+  }
   mode.value = mode.value === 'login' ? 'register' : 'login'
   error.value = ''
 }
@@ -65,7 +72,9 @@ async function submit() {
   error.value = ''
   loading.value = true
   try {
-    if (mode.value === 'login') {
+    const useRegister = registerEnabled && mode.value === 'register'
+    if (!useRegister) {
+      mode.value = 'login'
       await login({ username: username.value, password: password.value })
     } else {
       await register({

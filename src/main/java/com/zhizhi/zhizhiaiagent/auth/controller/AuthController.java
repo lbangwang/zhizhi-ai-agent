@@ -4,10 +4,12 @@ import com.zhizhi.zhizhiaiagent.auth.dto.LoginRequest;
 import com.zhizhi.zhizhiaiagent.auth.dto.LoginResponse;
 import com.zhizhi.zhizhiaiagent.auth.dto.RegisterRequest;
 import com.zhizhi.zhizhiaiagent.auth.service.AuthService;
+import com.zhizhi.zhizhiaiagent.auth.support.ClientIpResolver;
 import com.zhizhi.zhizhiaiagent.persistence.dto.ApiResult;
 import com.zhizhi.zhizhiaiagent.persistence.dto.UserResponse;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
+import jakarta.servlet.http.HttpServletRequest;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
@@ -27,16 +29,16 @@ public class AuthController {
     @Autowired
     private  AuthService authService;
 
-    @Operation(summary = "注册", description = "注册新用户并返回登录凭证。")
+    @Operation(summary = "注册", description = "注册新用户并返回登录凭证。关闭公开注册时返回业务错误。")
     @PostMapping("/register")
     public ApiResult<LoginResponse> register(@RequestBody RegisterRequest request) {
         return ApiResult.ok(authService.register(request));
     }
 
-    @Operation(summary = "登录", description = "用户名密码登录，返回 Token 等凭证信息。")
+    @Operation(summary = "登录", description = "用户名密码登录，返回 Token 等凭证信息。失败次数过多会短暂限流。")
     @PostMapping("/login")
-    public ApiResult<LoginResponse> login(@RequestBody LoginRequest request) {
-        return ApiResult.ok(authService.login(request));
+    public ApiResult<LoginResponse> login(@RequestBody LoginRequest request, HttpServletRequest httpRequest) {
+        return ApiResult.ok(authService.login(request, ClientIpResolver.resolve(httpRequest)));
     }
 
     @Operation(summary = "退出登录", description = "注销当前登录态，使 Token 失效。")

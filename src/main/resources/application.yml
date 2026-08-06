@@ -114,6 +114,11 @@ mybatis-plus:
 app:
   datasource:
     enabled: ${MYSQL_ENABLED:true}
+  # 认证：云端建议关闭公开注册，由运维预置账号
+  auth:
+    register-enabled: ${AUTH_REGISTER_ENABLED:false}
+    login-max-failures: ${AUTH_LOGIN_MAX_FAILURES:5}
+    login-lock-seconds: ${AUTH_LOGIN_LOCK_SECONDS:900}
   redis:
     enabled: ${REDIS_ENABLED:false}
     stop-key-prefix: "zhizhi:chat:stop:"

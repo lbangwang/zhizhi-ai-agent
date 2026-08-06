@@ -207,11 +207,101 @@ sudo certbot --nginx -d demo.yourdomain.com
 ### 第 11 步：演示前自检
 
 - [ ] 首页可开  
-- [ ] 注册/登录  
+- [ ] 登录页**无**「去注册」；预置账号可登录  
 - [ ] Workspace 流式回复  
 - [ ] 停止按钮有效  
 - [ ] HITL 写文件可拒绝  
 - [ ] 轻量控制台确认 **未放行** 3306 / 6379 / 8123  
+
+---
+
+## 关闭公开注册与预置演示账号（防刷 Token）
+
+云端演示默认**关闭公开注册**：访客只能登录你预置的账号，避免陌生人自助注册后刷模型。
+
+### 环境变量（后端 `.env`）
+
+```bash
+# /opt/zhizhi-ai-agent/.env
+AUTH_REGISTER_ENABLED=false
+AUTH_LOGIN_MAX_FAILURES=5
+AUTH_LOGIN_LOCK_SECONDS=900
+```
+
+改完后需重新 `source .env` 并重启 JAR（见下文 B）。
+
+前端构建时保持不设或：
+
+```bash
+# zhizhi-ai-agent-frountend/.env（构建用）
+VITE_AUTH_REGISTER_ENABLED=false
+```
+
+登录页将隐藏「去注册」；即使有人直接调 `POST /api/auth/register`，后端也会返回「暂不开放注册」。
+
+### 预置账号（二选一）
+
+**方式 A（推荐）**：临时打开注册 → 建号 → 立刻关掉
+
+```bash
+# 1) 临时开启
+sed -i 's/^AUTH_REGISTER_ENABLED=.*/AUTH_REGISTER_ENABLED=true/' /opt/zhizhi-ai-agent/.env
+set -a && source /opt/zhizhi-ai-agent/.env && set +a
+pkill -f 'zhizhi-ai-agent-0.0.1-SNAPSHOT.jar' || true
+# 再按日常流程用 nohup 启动 JAR …
+
+# 2) 注册演示账号（勿把真实密码写进仓库 / 文档公开处）
+curl -s -X POST http://127.0.0.1:8123/api/auth/register \
+  -H 'Content-Type: application/json' \
+  -d '{"username":"demo_user","password":"你的强密码","nickname":"演示"}'
+
+# 3) 立刻关闭注册并重启
+sed -i 's/^AUTH_REGISTER_ENABLED=.*/AUTH_REGISTER_ENABLED=false/' /opt/zhizhi-ai-agent/.env
+set -a && source /opt/zhizhi-ai-agent/.env && set +a
+pkill -f 'zhizhi-ai-agent-0.0.1-SNAPSHOT.jar' || true
+# 再启动 JAR …
+```
+
+**方式 B**：生成 BCrypt 哈希后 SQL 插入
+
+后端校验用的是 Hutool `BCrypt`。可在 IDEA Evaluate / 调试控制台执行：
+
+```java
+cn.hutool.crypto.digest.BCrypt.hashpw("你的强密码")
+```
+
+或本机 Python（`pip install bcrypt`，`$2a$` / `$2b$` 一般均可）：
+
+```bash
+python3 -c "import bcrypt; print(bcrypt.hashpw(b'你的强密码', bcrypt.gensalt()).decode())"
+```
+
+再执行 SQL（哈希请替换；账号密码勿写进公开仓库）：
+
+```sql
+INSERT INTO app_user (
+  id, username, password_hash, nickname, status,
+  create_date, create_by, update_date, update_by, is_del, enterprise_id
+) VALUES (
+  REPLACE(UUID(), '-', ''),
+  'demo_user',
+  '$2a$10$请替换为BCrypt哈希',
+  '演示',
+  1,
+  NOW(), 'ops', NOW(), 'ops', 0, NULL
+);
+```
+
+### 禁用账号
+
+```sql
+UPDATE app_user SET status = 0, update_date = NOW(), update_by = 'ops'
+WHERE username = 'demo_user' AND is_del = 0;
+```
+
+`status=0` 时登录会提示「账号已禁用」。
+
+面试前准备 1～2 个演示账号当面告知，**勿写入公开仓库**。
 
 ---
 
@@ -301,13 +391,19 @@ curl -s -o /dev/null -w "%{http_code}\n" http://127.0.0.1:8123/api/health
 # 期望 200；失败则：tail -n 100 /opt/zhizhi-ai-agent/logs/backend.log
 ```
 
-注册接口自检（可选）：
+认证自检（可选）：
 
 ```bash
-curl -s -i -X POST http://127.0.0.1:8123/api/auth/register \
+# 公开注册已关闭时：应返回业务失败（暂不开放注册），而不是 404
+curl -s -X POST http://127.0.0.1:8123/api/auth/register \
   -H 'Content-Type: application/json' \
-  -d '{"username":"demo_user_01","password":"123456","nickname":"demo"}'
-# 正常应返回 code:0 与 token；若 status:404，多半是 MYSQL_ENABLED 未生效（Auth 模块未加载）
+  -d '{"username":"should_fail","password":"123456","nickname":"x"}'
+# 若 HTTP 404：多半是 MYSQL_ENABLED 未生效（Auth 模块未加载）
+
+# 预置账号登录应成功
+curl -s -X POST http://127.0.0.1:8123/api/auth/login \
+  -H 'Content-Type: application/json' \
+  -d '{"username":"demo_user","password":"你的密码"}'
 ```
 
 ---
@@ -596,7 +692,7 @@ sudo nginx -t && sudo systemctl reload nginx
 ## 8. 上线检查清单（发给面试官前）
 
 - [ ] `https://你的域名` 能打开首页  
-- [ ] 注册/登录可用（或已预置账号）  
+- [ ] `AUTH_REGISTER_ENABLED=false`；登录页无注册入口；预置账号可登录  
 - [ ] Workspace 对话有 SSE 流式输出（不是卡住无响应）  
 - [ ] 点「停止」能结束生成  
 - [ ] HITL：写文件弹出确认，拒绝后计划显示已拒绝  
@@ -605,7 +701,7 @@ sudo nginx -t && sudo systemctl reload nginx
 - [ ] 公网扫端口：3306/6379/8123 **不可达**  
 - [ ] 演示账号密码已准备；README 三场景可走通  
 
-预置账号建议：只开 1～2 个，密码当面告知或放在邀请邮件，勿写进公开仓库。
+预置账号与关注册步骤见上文 **「关闭公开注册与预置演示账号」**。
 
 ---
 
@@ -613,6 +709,8 @@ sudo nginx -t && sudo systemctl reload nginx
 
 | 风险 | 建议 |
 |------|------|
+| 公开注册刷 Token | `AUTH_REGISTER_ENABLED=false` + 前端隐藏注册；只发预置账号 |
+| 撞库试密码 | 登录失败限流（默认 5 次 / 15 分钟，按 IP 与用户名） |
 | 终端命令工具 | 云上演示尽量只展示 HITL「拒绝」，或临时下线该工具 |
 | 写文件 / 下载 | 限制工作目录到 `/opt/zhizhi-ai-agent/data` |
 | 费用 | 模型与 SearchAPI 设配额；面试结束后可停机 |
@@ -627,6 +725,8 @@ sudo nginx -t && sudo systemctl reload nginx
 | 页面开得开，聊天无流式 | Nginx 是否 `proxy_buffering off`、超时是否够长 |
 | 401 满屏 | JWT Secret、Cookie/跨域；优先同域 `/api` |
 | 注册/登录 404，health 200 | `.env` 中 `MYSQL_ENABLED=true` 是否在启动前 `source` 生效 |
+| 注册提示「暂不开放注册」 | 预期行为；需新账号见「关闭公开注册与预置演示账号」 |
+| 登录提示过于频繁 | 失败次数触发限流；等窗口结束或重启进程清空内存计数 |
 | 打开站点 403 / Welcome to nginx | `/var/www/zhizhi-web` 是否有 `index.html`；是否禁用了 default 站点 |
 | 停止无效 | `REDIS_ENABLED` 与密码是否与 compose 一致 |
 | 上传知识库失败 | `data/` 目录权限、磁盘空间 |

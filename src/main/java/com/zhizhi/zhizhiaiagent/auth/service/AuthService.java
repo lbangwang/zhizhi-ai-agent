@@ -6,6 +6,7 @@ import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.zhizhi.zhizhiaiagent.auth.dto.LoginRequest;
 import com.zhizhi.zhizhiaiagent.auth.dto.LoginResponse;
 import com.zhizhi.zhizhiaiagent.auth.dto.RegisterRequest;
+import com.zhizhi.zhizhiaiagent.auth.support.LoginAttemptLimiter;
 import com.zhizhi.zhizhiaiagent.persistence.dto.UserResponse;
 import com.zhizhi.zhizhiaiagent.persistence.entity.UserEntity;
 import com.zhizhi.zhizhiaiagent.persistence.mapper.UserMapper;
@@ -13,6 +14,7 @@ import com.zhizhi.zhizhiaiagent.persistence.support.AuditHelper;
 import com.zhizhi.zhizhiaiagent.persistence.support.IdGenerator;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -24,22 +26,28 @@ import org.springframework.util.StringUtils;
 public class AuthService {
 
     @Autowired
-    private  UserMapper userMapper;
+    private UserMapper userMapper;
+
+    private final LoginAttemptLimiter loginAttemptLimiter;
+
+    @Value("${app.auth.register-enabled:false}")
+    private boolean registerEnabled;
 
     @Transactional
     public LoginResponse register(RegisterRequest request) {
-        //校验用户名和密码
+        if (!registerEnabled) {
+            throw new IllegalArgumentException("暂不开放注册，请使用已分配的账号登录");
+        }
+
         String username = requireUsername(request.getUsername());
         String password = requirePassword(request.getPassword());
 
-        //数据库是否存在
         Long count = userMapper.selectCount(new LambdaQueryWrapper<UserEntity>()
                 .eq(UserEntity::getUsername, username));
         if (count != null && count > 0) {
             throw new IllegalArgumentException("用户名已存在");
         }
 
-        //设置用户信息
         UserEntity entity = new UserEntity();
         entity.setId(IdGenerator.nextId());
         entity.setUsername(username);
@@ -51,25 +59,27 @@ public class AuthService {
         AuditHelper.fillOnCreate(entity, username, null);
         userMapper.insert(entity);
 
-        //返回用户和token相关信息
         return loginByUser(entity);
     }
 
     @Transactional(readOnly = true)
-    public LoginResponse login(LoginRequest request) {
+    public LoginResponse login(LoginRequest request, String clientIp) {
         String username = requireUsername(request.getUsername());
         String password = requirePassword(request.getPassword());
+        loginAttemptLimiter.assertAllowed(clientIp, username);
 
         UserEntity entity = userMapper.selectOne(new LambdaQueryWrapper<UserEntity>()
                 .eq(UserEntity::getUsername, username)
                 .last("LIMIT 1"));
         if (entity == null || !StringUtils.hasText(entity.getPasswordHash())
                 || !BCrypt.checkpw(password, entity.getPasswordHash())) {
+            loginAttemptLimiter.recordFailure(clientIp, username);
             throw new IllegalArgumentException("用户名或密码错误");
         }
         if (entity.getStatus() != null && entity.getStatus() == 0) {
             throw new IllegalArgumentException("账号已禁用");
         }
+        loginAttemptLimiter.clear(clientIp, username);
         return loginByUser(entity);
     }
 
